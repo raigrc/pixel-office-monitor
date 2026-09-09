@@ -17,4 +17,5 @@ export * from "./navigation";
 export * from "./indicators";
 export * from "./particles";
 export * from "./ship";
+export * from "./settings3d";
 export { getRoute, getSenderStartPosition, getRecipientHandoffPosition, getSenderReturnPosition, calculateFacing, getDistance } from "./routes";
