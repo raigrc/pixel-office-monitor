@@ -58,7 +58,7 @@ function createSphere(radius: number, segments = 8): THREE.BufferGeometry {
   return new THREE.SphereGeometry(radius, segments, segments);
 }
 
-const BUILDING_RECIPES: BuildingRecipe[] = [
+export const BUILDING_RECIPES: BuildingRecipe[] = [
   {
     name: 'habitat',
     height: 4.5,
@@ -198,24 +198,22 @@ export function createBuildingGeometry(floorId: string): { geometry: THREE.Buffe
     const vertexCount = geo.attributes.position.count;
 
     const matIndex = new Float32Array(vertexCount).fill(part.materialIndex);
-    if (!geo.attributes.materialIndex) {
-      geo.setAttribute('materialIndex', new THREE.InstancedBufferAttribute(matIndex, 1));
-    }
+    geo.setAttribute('materialIndex', new THREE.BufferAttribute(matIndex, 1));
 
     if (part.emissiveVertices) {
       const emissive = new Float32Array(vertexCount).fill(0);
       part.emissiveVertices.forEach((idx) => { if (idx < vertexCount) emissive[idx] = 1; });
-      geo.setAttribute('aEmissive', new THREE.InstancedBufferAttribute(emissive, 1));
+      geo.setAttribute('aEmissive', new THREE.BufferAttribute(emissive, 1));
     } else {
-      geo.setAttribute('aEmissive', new THREE.InstancedBufferAttribute(new Float32Array(vertexCount).fill(0), 1));
+      geo.setAttribute('aEmissive', new THREE.BufferAttribute(new Float32Array(vertexCount).fill(0), 1));
     }
 
     if (part.rotorVertices) {
       const rotor = new Float32Array(vertexCount).fill(0);
       part.rotorVertices.forEach((idx) => { if (idx < vertexCount) rotor[idx] = 1; });
-      geo.setAttribute('aRotor', new THREE.InstancedBufferAttribute(rotor, 1));
+      geo.setAttribute('aRotor', new THREE.BufferAttribute(rotor, 1));
     } else {
-      geo.setAttribute('aRotor', new THREE.InstancedBufferAttribute(new Float32Array(vertexCount).fill(0), 1));
+      geo.setAttribute('aRotor', new THREE.BufferAttribute(new Float32Array(vertexCount).fill(0), 1));
     }
 
     geometries.push(geo);

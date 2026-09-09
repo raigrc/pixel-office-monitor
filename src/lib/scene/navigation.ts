@@ -19,7 +19,7 @@ export interface NavGrid {
 export function createNavGrid(): NavGrid {
   return {
     obstacles: new Uint8Array(NAV_GRID_SIZE * NAV_GRID_SIZE),
-    generation: 0,
+    generation: 1,
     width: NAV_GRID_SIZE,
     height: NAV_GRID_SIZE,
   };
@@ -94,6 +94,15 @@ export interface PathResult {
   blocked: boolean;
 }
 
+interface Node {
+  gx: number;
+  gz: number;
+  g: number;
+  f: number;
+  parentGx: number;
+  parentGz: number;
+}
+
 const NEIGHBORS_8 = [
   { dx: 1, dz: 0, cost: 1 },
   { dx: -1, dz: 0, cost: 1 },
@@ -105,8 +114,14 @@ const NEIGHBORS_8 = [
   { dx: -1, dz: -1, cost: 1.414 },
 ];
 
-const SCRATCH_OPEN: { gx: number; gz: number; f: number; g: number; parent: number }[] = [];
+const SCRATCH_OPEN: Node[] = [];
 const SCRATCH_CLOSED: Uint8Array = new Uint8Array(NAV_GRID_SIZE * NAV_GRID_SIZE);
+const SCRATCH_G_SCORE: Float32Array = new Float32Array(NAV_GRID_SIZE * NAV_GRID_SIZE);
+const SCRATCH_PARENT: Int32Array = new Int32Array(NAV_GRID_SIZE * NAV_GRID_SIZE);
+
+function idx(gx: number, gz: number, width: number): number {
+  return gz * width + gx;
+}
 
 export function findPath(
   grid: NavGrid,
@@ -126,11 +141,20 @@ export function findPath(
 
   SCRATCH_OPEN.length = 0;
   SCRATCH_CLOSED.fill(0);
+  SCRATCH_G_SCORE.fill(Infinity);
 
-  const startIdx = startGz * grid.width + startGx;
-  const goalIdx = goalGz * grid.width + goalGx;
+  const startIndex = idx(startGx, startGz, grid.width);
+  SCRATCH_G_SCORE[startIndex] = 0;
+  SCRATCH_PARENT[startIndex] = -1;
 
-  SCRATCH_OPEN.push({ gx: startGx, gz: startGz, f: heuristic(startGx, startGz, goalGx, goalGz), g: 0, parent: -1 });
+  SCRATCH_OPEN.push({
+    gx: startGx,
+    gz: startGz,
+    g: 0,
+    f: heuristic(startGx, startGz, goalGx, goalGz),
+    parentGx: -1,
+    parentGz: -1,
+  });
 
   let openStart = 0;
   const maxIterations = grid.width * grid.height;
@@ -153,11 +177,11 @@ export function findPath(
     openStart++;
 
     if (current.gx === goalGx && current.gz === goalGz) {
-      return reconstructPath(grid, current, SCRATCH_OPEN, startIdx);
+      return reconstructPath(grid, current, startGx, startGz);
     }
 
-    const currentIdx = current.gz * grid.width + current.gx;
-    SCRATCH_CLOSED[currentIdx] = 1;
+    const currentIndex = idx(current.gx, current.gz, grid.width);
+    SCRATCH_CLOSED[currentIndex] = 1;
 
     for (const n of NEIGHBORS_8) {
       const ngx = current.gx + n.dx;
@@ -166,28 +190,38 @@ export function findPath(
       if (ngx < 0 || ngx >= grid.width || ngz < 0 || ngz >= grid.height) continue;
       if (!isNavWalkable(grid, ngx, ngz)) continue;
 
-      const nIdx = ngz * grid.width + ngx;
-      if (SCRATCH_CLOSED[nIdx]) continue;
+      const neighborIndex = idx(ngx, ngz, grid.width);
+      if (SCRATCH_CLOSED[neighborIndex]) continue;
 
       const g = current.g + n.cost;
-      const f = g + heuristic(ngx, ngz, goalGx, goalGz);
 
-      let existingIdx = -1;
-      for (let i = openStart; i < SCRATCH_OPEN.length; i++) {
-        if (SCRATCH_OPEN[i].gx === ngx && SCRATCH_OPEN[i].gz === ngz) {
-          existingIdx = i;
-          break;
+      if (g < SCRATCH_G_SCORE[neighborIndex]) {
+        SCRATCH_G_SCORE[neighborIndex] = g;
+        SCRATCH_PARENT[neighborIndex] = currentIndex;
+
+        const f = g + heuristic(ngx, ngz, goalGx, goalGz);
+
+        let existingIdx = -1;
+        for (let i = openStart; i < SCRATCH_OPEN.length; i++) {
+          if (SCRATCH_OPEN[i].gx === ngx && SCRATCH_OPEN[i].gz === ngz) {
+            existingIdx = i;
+            break;
+          }
         }
-      }
 
-      if (existingIdx >= 0) {
-        if (g < SCRATCH_OPEN[existingIdx].g) {
+        if (existingIdx >= 0) {
           SCRATCH_OPEN[existingIdx].g = g;
           SCRATCH_OPEN[existingIdx].f = f;
-          SCRATCH_OPEN[existingIdx].parent = SCRATCH_OPEN.length - 1;
+        } else {
+          SCRATCH_OPEN.push({
+            gx: ngx,
+            gz: ngz,
+            g,
+            f,
+            parentGx: current.gx,
+            parentGz: current.gz,
+          });
         }
-      } else {
-        SCRATCH_OPEN.push({ gx: ngx, gz: ngz, f, g, parent: openStart - 1 });
       }
     }
   }
@@ -203,18 +237,23 @@ function heuristic(gx: number, gz: number, goalGx: number, goalGz: number): numb
 
 function reconstructPath(
   grid: NavGrid,
-  goalNode: { gx: number; gz: number; parent: number },
-  openList: { gx: number; gz: number; parent: number }[],
-  startIdx: number
+  goalNode: Node,
+  startGx: number,
+  startGz: number
 ): PathResult {
   const path: { gx: number; gz: number }[] = [];
-  let current = goalNode;
+  let gx = goalNode.gx;
+  let gz = goalNode.gz;
 
-  while (current.parent !== -1) {
-    path.push({ gx: current.gx, gz: current.gz });
-    current = openList[current.parent];
+  while (!(gx === startGx && gz === startGz)) {
+    path.push({ gx, gz });
+    const currentIndex = idx(gx, gz, grid.width);
+    const parentIndex = SCRATCH_PARENT[currentIndex];
+    if (parentIndex === -1) break;
+    gx = parentIndex % grid.width;
+    gz = Math.floor(parentIndex / grid.width);
   }
-  path.push({ gx: current.gx, gz: current.gz });
+  path.push({ gx: startGx, gz: startGz });
   path.reverse();
 
   const waypoints: THREE.Vector3[] = [];
@@ -288,7 +327,7 @@ export function computeSeparation(
   let count = 0;
 
   for (const other of agents) {
-    if (other === agent) continue;
+    if (other.position === agent.position) continue;
     const diff = new THREE.Vector3().subVectors(agent.position, other.position);
     const dist = diff.length();
     if (dist > 0 && dist < separationDist) {

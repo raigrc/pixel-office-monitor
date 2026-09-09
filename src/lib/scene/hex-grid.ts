@@ -145,29 +145,45 @@ export function allocateCells(
   }
 
   for (const project of sortedProjects) {
-    const existingCount = Array.from(cells.values()).filter((c) => c.projectId === project.id).length;
+    const existingCells = Array.from(cells.values()).filter((c) => c.projectId === project.id);
+    const existingCount = existingCells.length;
     const needed = project.cellCount - existingCount;
-    if (needed <= 0) continue;
 
-    const frontier: { q: number; r: number }[] = [{ q: root.q, r: root.r }];
-    const visited = new Set<string>([rootKey]);
+    if (needed > 0) {
+      const frontier: { q: number; r: number }[] = [{ q: root.q, r: root.r }];
+      const visited = new Set<string>([rootKey]);
 
-    let added = 0;
-    while (added < needed && frontier.length > 0) {
-      const current = frontier.shift()!;
-      const neighbors = getNeighbors(current);
+      let added = 0;
+      while (added < needed && frontier.length > 0) {
+        const current = frontier.shift()!;
+        const neighbors = getNeighbors(current);
 
-      for (const neighbor of neighbors) {
-        const key = hexToKey(neighbor.q, neighbor.r);
-        if (occupied.has(key) || visited.has(key)) continue;
+        for (const neighbor of neighbors) {
+          const key = hexToKey(neighbor.q, neighbor.r);
+          if (occupied.has(key) || visited.has(key)) continue;
 
-        cells.set(key, { q: neighbor.q, r: neighbor.r, projectId: project.id });
-        occupied.add(key);
-        visited.add(key);
-        frontier.push(neighbor);
-        added++;
+          cells.set(key, { q: neighbor.q, r: neighbor.r, projectId: project.id });
+          occupied.add(key);
+          visited.add(key);
+          frontier.push(neighbor);
+          added++;
 
-        if (added >= needed) break;
+          if (added >= needed) break;
+        }
+      }
+    } else if (needed < 0) {
+      const cellsToRemove = -needed;
+      const sortedByDistance = existingCells
+        .map(cell => ({
+          cell,
+          dist: hexDistance(cell, root),
+        }))
+        .sort((a, b) => b.dist - a.dist);
+
+      for (let i = 0; i < cellsToRemove && i < sortedByDistance.length; i++) {
+        const key = hexToKey(sortedByDistance[i].cell.q, sortedByDistance[i].cell.r);
+        cells.delete(key);
+        occupied.delete(key);
       }
     }
   }
