@@ -9,4 +9,6 @@ export * from "./hex-grid";
 export * from "./plot-geometry";
 export * from "./terrain";
 export * from "./scatter";
+export * from "./buildings";
+export * from "./building-shader";
 export { getRoute, getSenderStartPosition, getRecipientHandoffPosition, getSenderReturnPosition, calculateFacing, isPositionWalkable, getDistance } from "./routes";
