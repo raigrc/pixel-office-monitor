@@ -1,0 +1,437 @@
+@import "tailwindcss";
+
+:root {
+  --bg: #0f172a;
+  --surface: #1e293b;
+  --raised: #24324d;
+  --border: #334155;
+  --text: #f1f5f9;
+  --muted: #94a3b8;
+  --working: #22c55e;
+  --typing: #3b82f6;
+  --idle: #64748b;
+  --accent: #f97316;
+  --error: #ef4444;
+  /* Motion tokens (animate skill): strong curves, UI <300ms. */
+  --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+  --ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);
+  --ease-drawer: cubic-bezier(0.32, 0.72, 0, 1);
+  --dur-instant: 120ms;
+  --dur-fast: 180ms;
+  --dur-ui: 240ms;
+}
+
+@theme inline {
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-raised: var(--raised);
+  --color-border: var(--border);
+  --color-text: var(--text);
+  --color-muted: var(--muted);
+  --font-pixel: var(--font-pixel);
+  --font-vt: var(--font-vt);
+  --font-inter: var(--font-inter);
+}
+
+/* Base */
+html {
+  scrollbar-gutter: stable;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) var(--bg);
+}
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-vt), "VT323", monospace;
+  font-size: 18px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Pixelated rendering helper */
+.pixelated {
+  image-rendering: pixelated;
+  image-rendering: crisp-edges;
+}
+
+/* Pixel art image utility — use on all <img> PNG sprites */
+.pixel-img {
+  image-rendering: pixelated;
+  image-rendering: crisp-edges;
+  -ms-interpolation-mode: nearest-neighbor;
+}
+
+/* CRT overlay helper — 6% scanline toggle via .crt class on container */
+.crt {
+  position: relative;
+}
+.crt::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: repeating-linear-gradient(
+    to bottom,
+    transparent 0px,
+    transparent 2px,
+    rgba(255, 255, 255, 0.06) 2px,
+    rgba(255, 255, 255, 0.06) 3px
+  );
+  opacity: 0.6;
+}
+
+/* Keyframes */
+@keyframes floatZ {
+  0%,
+  100% {
+    transform: translateY(0) translateX(0);
+  }
+  50% {
+    transform: translateY(-8px) translateX(2px);
+  }
+}
+
+@keyframes working-pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgba(34, 197, 94, 0);
+  }
+  50% {
+    box-shadow: 0 0 12px 2px rgba(34, 197, 94, 0.15);
+  }
+}
+
+@keyframes blink {
+  0%,
+  50% {
+    opacity: 1;
+  }
+  51%,
+  100% {
+    opacity: 0;
+  }
+}
+
+@keyframes pulse-live {
+  0%,
+  100% {
+    opacity: 1;
+    box-shadow: 0 0 6px rgba(34, 197, 94, 0.6);
+  }
+  50% {
+    opacity: 0.7;
+    box-shadow: 0 0 2px rgba(34, 197, 94, 0.3);
+  }
+}
+
+/* Agent state animations — applied via [data-state] on sprite wrapper */
+@keyframes state-thinking {
+  0%, 100% {
+    transform: rotate(0deg);
+  }
+  25% {
+    transform: rotate(1.5deg);
+  }
+  75% {
+    transform: rotate(-1.5deg);
+  }
+}
+
+@keyframes state-delegating {
+  0%, 100% {
+    transform: translateX(0);
+  }
+  50% {
+    transform: translateX(3px);
+  }
+}
+
+@keyframes state-celebrating {
+  0% {
+    transform: translateY(0) scale(1);
+  }
+  25% {
+    transform: translateY(-6px) scale(1.05);
+  }
+  50% {
+    transform: translateY(0) scale(1);
+  }
+  75% {
+    transform: translateY(-3px) scale(1.02);
+  }
+  100% {
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes state-working {
+  0%, 100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-1px);
+  }
+}
+
+@keyframes prop-sync {
+  0%, 100% {
+    transform: translateY(0) rotate(0deg);
+  }
+  50% {
+    transform: translateY(-2px) rotate(5deg);
+  }
+}
+
+.animate-floatZ {
+  animation: floatZ 2s ease-in-out infinite;
+}
+
+.animate-working-pulse {
+  animation: working-pulse 2s ease-in-out infinite;
+}
+
+.animate-blink {
+  animation: blink 1s step-end infinite;
+}
+
+.animate-working {
+  animation: pulse-live 1.6s ease-in-out infinite;
+}
+
+/* Agent state animations */
+.animate-state-thinking {
+  animation: state-thinking 2s ease-in-out infinite;
+  transform-origin: center top;
+}
+
+.animate-state-delegating {
+  animation: state-delegating 1.5s ease-in-out infinite;
+}
+
+.animate-state-celebrating {
+  animation: state-celebrating 1s ease-out;
+  animation-fill-mode: forwards;
+}
+
+.animate-state-working {
+  animation: state-working 400ms ease-in-out infinite;
+}
+
+.animate-prop-sync {
+  animation: prop-sync 400ms ease-in-out infinite;
+  transform-origin: bottom center;
+}
+
+/* R4 — cubicle entrance: slide up + scale in, 240ms strong ease-out, stagger 60ms */
+.cubicle-enter {
+  transform: translateY(0) scale(1);
+  opacity: 1;
+  transition:
+    transform var(--dur-ui) var(--ease-out),
+    opacity var(--dur-ui) var(--ease-out),
+    border-color var(--dur-fast) var(--ease-out),
+    background-color var(--dur-fast) var(--ease-out);
+  will-change: transform, opacity;
+}
+
+.cubicle-enter--initial {
+  transform: translateY(8px) scale(0.98);
+  opacity: 0;
+}
+
+/* Idle "Zzz" indicator — slow rise loop, frozen (not hidden) under reduced motion */
+@keyframes zzz-float {
+  0%, 100% { transform: translateY(0); opacity: 0.75; }
+  50% { transform: translateY(-3px); opacity: 1; }
+}
+.zzz-float > span {
+  display: inline-block;
+  animation: zzz-float 2.4s var(--ease-in-out) infinite;
+}
+.zzz-float > span:nth-child(2) { animation-delay: 0.4s; }
+.zzz-float > span:nth-child(3) { animation-delay: 0.8s; }
+
+/* Respect reduced motion */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+  .cubicle-enter,
+  .cubicle-enter--initial {
+    transition: none !important;
+    transform: none !important;
+    opacity: 1 !important;
+    animation: none !important;
+  }
+  .zzz-float > span {
+    animation: none !important;
+    opacity: 1 !important;
+  }
+  .monitor-working,
+  .monitor-spill-working,
+  .lamp-glow,
+  .lamp-cone,
+  .delegation-link-active,
+  .daynight-tint {
+    animation: none !important;
+    transition-duration: 0.01ms !important;
+  }
+  * {
+    scroll-behavior: auto !important;
+  }
+}
+
+/* Office floor texture — OLED dark, pixel-art tile pattern, baseboard */
+.office-floor {
+  background-color: #0f172a;
+  background-image: url('/sprites/floor-tile.png');
+  background-repeat: repeat;
+  background-size: 32px 32px;
+  image-rendering: pixelated;
+  /* baseboard inset: 6px #0B1220 + 2px #334155 lip */
+  box-shadow:
+    inset 0 -6px 0 #0b1220,
+    inset 0 -8px 0 #334155;
+}
+
+/* aisle stripe — dashed mid-line for office corridor feel */
+.aisle {
+  border-bottom: 1px dashed rgba(51, 65, 85, 0.4);
+}
+
+/* Monitor glow — green pulse for active screens (GPU: opacity/filter only) */
+@keyframes monitor-glow {
+  0%, 100% {
+    opacity: 0.85;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+.animate-monitor-glow {
+  animation: monitor-glow 2s var(--ease-in-out) infinite;
+}
+
+/* Working monitor: transform/opacity pulse, off-thread. */
+.monitor-working {
+  animation: monitor-glow 1.6s var(--ease-in-out) infinite;
+}
+
+/* Prop float — subtle 2px bob for desk props when agent is working */
+@keyframes prop-float {
+  0%, 100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-2px);
+  }
+}
+
+.animate-prop-float {
+  animation: prop-float 1.5s var(--ease-in-out) infinite;
+}
+
+/* Lamp glow flicker — rare, gentle (night only). */
+@keyframes lamp-flicker {
+  0%, 100% { opacity: 0.9; }
+  45% { opacity: 1; }
+  50% { opacity: 0.92; }
+  55% { opacity: 1; }
+}
+.lamp-glow {
+  animation: lamp-flicker 4s linear infinite;
+}
+
+/* Day-night tint: rare transition, longer allowed (900ms ease-out). */
+.daynight-tint {
+  transition: opacity 900ms var(--ease-out);
+}
+
+/* Delegation link dash drift (SVG stroke, constant motion = linear). */
+@keyframes dash-drift {
+  to { stroke-dashoffset: -14; }
+}
+.delegation-link-active {
+  animation: dash-drift 1s linear infinite;
+}
+
+/* Night light spill: opacity-only pulse so emissive feels alive. */
+@keyframes monitor-spill-pulse {
+  0%, 100% { opacity: 0.85; }
+  50% { opacity: 1; }
+}
+.monitor-spill-working {
+  animation: monitor-spill-pulse 1.6s var(--ease-in-out) infinite;
+}
+@keyframes lamp-cone-breathe {
+  0%, 100% { opacity: 0.92; }
+  50% { opacity: 1; }
+}
+.lamp-cone {
+  animation: lamp-cone-breathe 3.2s var(--ease-in-out) infinite;
+}
+
+/* (Roster room: no exit animations — desks are permanent.) */
+
+/* Button press feedback (100-160ms). */
+@media (hover: hover) and (pointer: fine) {
+  .pressable:hover {
+    transform: translateY(-1px);
+  }
+}
+.pressable:active {
+  transform: scale(0.97);
+}
+
+/* Focus ring visible */
+*:focus-visible {
+  outline: 2px solid var(--typing);
+  outline-offset: 2px;
+}
+
+/* Safe area insets for mobile (iOS home indicator, Android gesture nav) */
+:root {
+  --safe-area-inset-top: env(safe-area-inset-top);
+  --safe-area-inset-right: env(safe-area-inset-right);
+  --safe-area-inset-bottom: env(safe-area-inset-bottom);
+  --safe-area-inset-left: env(safe-area-inset-left);
+}
+
+.safe-area-inset-bottom {
+  padding-bottom: env(safe-area-inset-bottom);
+}
+
+.safe-area-inset-top {
+  padding-top: env(safe-area-inset-top);
+}
+
+.safe-area-inset-left {
+  padding-left: env(safe-area-inset-left);
+}
+
+.safe-area-inset-right {
+  padding-right: env(safe-area-inset-right);
+}
+
+/* Global scrollbar for webkit */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-track {
+  background: var(--bg);
+}
+::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--muted);
+}
