@@ -11,6 +11,7 @@ import { createScatterMesh, ScatterConfig } from './scatter';
 import { createShip, ShipConfig, Ship } from './ship';
 import { createBuildingGeometry, createBuildingMaterials } from './buildings';
 import { createAstronauts, Astronauts, AstronautState } from './astronauts';
+import { createCrewRig } from './crew-rig';
 import { createBadges } from './indicators';
 import { createParticleSystem } from './particles';
 import { HexCell, hexToWorld, allocateCells, HEX_SIZE } from './hex-grid';
@@ -205,7 +206,7 @@ export class ThreeEngine {
 
     this.stopRenderLoop();
 
-    if (this.renderer && this.container) {
+    if (this.renderer && this.container && this.renderer.domElement.parentNode === this.container) {
       this.container.removeChild(this.renderer.domElement);
     }
 
@@ -381,17 +382,7 @@ export class ThreeEngine {
     this.scene.add(this.badges.getMesh());
     this.particles = createParticleSystem(10000);
     this.scene.add(this.particles.getMesh());
-    this.astronauts = createAstronauts({ maxAgents: 64, rig: {
-      skeleton: { bones: [], calculateInverses: () => {} } as any,
-      bindMatrix: new THREE.Matrix4(),
-      bindMatrixInverse: new THREE.Matrix4(),
-      clips: new Map(),
-      boneCount: 22,
-      frameCount: 30,
-      headOffset: new THREE.Vector3(),
-      chestOffset: new THREE.Vector3(),
-      handOffsets: { left: new THREE.Vector3(), right: new THREE.Vector3() },
-    }});
+    this.astronauts = createAstronauts({ maxAgents: 64, rig: createCrewRig() });
     for (const mesh of this.astronauts.getMeshes()) {
       this.scene.add(mesh);
     }

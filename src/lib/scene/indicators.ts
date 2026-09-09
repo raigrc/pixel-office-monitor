@@ -64,13 +64,15 @@ const BADGE_VERTEX_SHADER = `
   varying vec3 vColor;
   varying vec2 vUv;
 
+  uniform float uBadgeSize;
+
   void main() {
     vBadge = instanceBadge;
     vColor = instanceColor;
     vUv = uv;
 
     vec3 pos = position;
-    pos.xy *= BADGE_SIZE;
+    pos.xy *= uBadgeSize;
     vec4 worldPos = modelMatrix * vec4(pos, 1.0);
     gl_Position = projectionMatrix * viewMatrix * worldPos;
   }
@@ -127,6 +129,7 @@ export class Badges {
       fragmentShader: BADGE_FRAGMENT_SHADER,
       uniforms: {
         badgeAtlas: { value: this.atlas },
+        uBadgeSize: { value: 0.5 },
       },
       transparent: true,
       depthWrite: false,

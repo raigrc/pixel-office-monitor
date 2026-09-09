@@ -109,31 +109,21 @@ function createFaceAtlas(): THREE.CanvasTexture {
 }
 
 const ASTRONAUT_VERTEX_SHADER = `
-  attribute vec3 instancePosition;
-  attribute float instanceFrame;
   attribute vec3 instanceColor;
+  attribute float instanceFrame;
   attribute float instanceFace;
-
-  uniform sampler2D boneTexture;
-  uniform int boneCount;
-  uniform int frameCount;
-  uniform mat4 bindMatrix;
-  uniform mat4 bindMatrixInverse;
 
   varying vec3 vColor;
   varying vec2 vFaceUV;
   varying vec3 vNormal;
   varying vec3 vWorldPosition;
 
-  mat4 getBoneMatrix(int boneIndex, float frame) {
-    float x = float(boneIndex * 4) / float(textureSize(boneTexture, 0).x);
-    float y = frame / float(textureSize(boneTexture, 0).y);
-    vec4 row0 = texture2D(boneTexture, vec2(x + 0.0 / float(textureSize(boneTexture, 0).x), y));
-    vec4 row1 = texture2D(boneTexture, vec2(x + 1.0 / float(textureSize(boneTexture, 0).x), y));
-    vec4 row2 = texture2D(boneTexture, vec2(x + 2.0 / float(textureSize(boneTexture, 0).x), y));
-    vec4 row3 = texture2D(boneTexture, vec2(x + 3.0 / float(textureSize(boneTexture, 0).x), y));
-    return mat4(row0, row1, row2, row3);
-  }
+  uniform float uTime;
+  uniform vec3 uSunDirection;
+  uniform vec3 uSunColor;
+  uniform float uSunIntensity;
+  uniform vec3 uAmbientColor;
+  uniform float uAmbientIntensity;
 
   void main() {
     vColor = instanceColor;
@@ -142,15 +132,15 @@ const ASTRONAUT_VERTEX_SHADER = `
       floor(instanceFace / 4.0) / 4.0 + 0.125 / 4.0
     );
 
-    mat4 boneMat = getBoneMatrix(0, instanceFrame);
-    vec4 worldPos = bindMatrix * boneMat * bindMatrixInverse * vec4(position, 1.0);
-    vWorldPosition = worldPos.xyz + instancePosition;
+    vec3 pos = position;
+    float anim = sin(uTime * 2.0 + instanceFrame) * 0.05;
+    pos.y += anim;
 
-    vec3 objectNormal = normal;
-    vec3 worldNormal = normalize(mat3(modelMatrix) * objectNormal);
-    vNormal = worldNormal;
+    vec4 worldPos = modelMatrix * vec4(pos, 1.0);
+    vWorldPosition = worldPos.xyz;
+    vNormal = normalize(mat3(modelMatrix) * normal);
 
-    gl_Position = projectionMatrix * viewMatrix * vec4(vWorldPosition, 1.0);
+    gl_Position = projectionMatrix * viewMatrix * worldPos;
   }
 `;
 
@@ -172,16 +162,9 @@ const ASTRONAUT_FRAGMENT_SHADER = `
     vec3 L = normalize(uSunDirection);
     float NdotL = max(dot(N, L), 0.0);
 
-    vec4 faceTex = texture2D(faceAtlas, vFaceUV);
-    float faceAlpha = faceTex.a;
-
     vec3 diffuse = vColor * uSunColor * NdotL * uSunIntensity;
     vec3 ambient = vColor * uAmbientColor * uAmbientIntensity;
     vec3 color = ambient + diffuse;
-
-    if (faceAlpha > 0.5) {
-      color = mix(color, vColor * 1.2, faceAlpha);
-    }
 
     gl_FragColor = vec4(color, 1.0);
   }
@@ -299,12 +282,7 @@ export class Astronauts {
       vertexShader: ASTRONAUT_VERTEX_SHADER,
       fragmentShader: ASTRONAUT_FRAGMENT_SHADER,
       uniforms: {
-        boneTexture: { value: this.boneTexture },
-        boneCount: { value: this.rig.boneCount },
-        frameCount: { value: 60 },
-        bindMatrix: { value: this.rig.bindMatrix },
-        bindMatrixInverse: { value: this.rig.bindMatrixInverse },
-        faceAtlas: { value: this.faceAtlas },
+        uTime: { value: 0 },
         uSunDirection: { value: new THREE.Vector3(0, 1, 0) },
         uSunColor: { value: new THREE.Color(0xffffee) },
         uSunIntensity: { value: 1 },
