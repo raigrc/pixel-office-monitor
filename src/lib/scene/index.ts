@@ -5,4 +5,8 @@ export * from "./presentation";
 export * from "./three-engine";
 export * from "./three-camera";
 export * from "./three-sky";
+export * from "./hex-grid";
+export * from "./plot-geometry";
+export * from "./terrain";
+export * from "./scatter";
 export { getRoute, getSenderStartPosition, getRecipientHandoffPosition, getSenderReturnPosition, calculateFacing, isPositionWalkable, getDistance } from "./routes";
