@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef } from "react";
+import * as THREE from "three";
 import { threeEngine } from "@/lib/scene/three-engine";
 
 export default function ThreeCanvas() {
@@ -10,6 +11,7 @@ export default function ThreeCanvas() {
     mountedRef.current = true;
     return () => {
       mountedRef.current = false;
+      threeEngine.unmount();
     };
   }, []);
 
@@ -19,16 +21,28 @@ export default function ThreeCanvas() {
     threeEngine.setAgents([
       {
         id: "agent-1",
-        position: { x: 0, y: 0, z: 0 } as any,
-        target: { x: 5, y: 0, z: 0 } as any,
+        position: new THREE.Vector3(-8, 0, -8),
+        target: new THREE.Vector3(-8, 0, -8),
         clip: "idle",
         clipTime: 0,
         frame: 0,
-        suitColor: { r: 1, g: 0.5, b: 0 } as any,
+        suitColor: new THREE.Color(1, 0.5, 0),
         faceIndex: 0,
         badge: "working",
         working: true,
-      } as any,
+      },
+      {
+        id: "agent-2",
+        position: new THREE.Vector3(8, 0, 8),
+        target: new THREE.Vector3(8, 0, 8),
+        clip: "walk",
+        clipTime: 0,
+        frame: 0,
+        suitColor: new THREE.Color(0, 0.8, 1),
+        faceIndex: 1,
+        badge: "waiting",
+        working: false,
+      },
     ]);
   }, []);
 
@@ -41,7 +55,7 @@ export default function ThreeCanvas() {
         }
       }}
       className="absolute inset-0"
-      style={{ zIndex: 10 }}
+      style={{ zIndex: 10, width: '100%', height: '100%' }}
     />
   );
 }

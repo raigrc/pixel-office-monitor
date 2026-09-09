@@ -55,14 +55,6 @@ export default function SceneViewport({ children, className }: SceneViewportProp
 
   useEffect(() => {
     threeEngine.setViewMode(viewMode);
-
-    if (viewMode === "3d" && threeContainerRef.current) {
-      threeEngine.mount(threeContainerRef.current);
-      threeEngine.resize();
-    } else {
-      threeEngine.unmount();
-    }
-
     const handleResize = () => threeEngine.resize();
     window.addEventListener("resize", handleResize);
     return () => {
@@ -79,6 +71,7 @@ export default function SceneViewport({ children, className }: SceneViewportProp
     <div
       ref={containerRef}
       className={`relative overflow-hidden ${className ?? ""}`}
+      style={{ height: '100vh', width: '100vw' }}
       role="img"
       aria-label="Office scene viewport"
     >
@@ -101,7 +94,11 @@ export default function SceneViewport({ children, className }: SceneViewportProp
       />
 
       {/* 3D Canvas Container */}
-      <div ref={threeContainerRef} className="absolute inset-0" style={{ zIndex: viewMode === "3d" ? 10 : -1 }} />
+      <div
+        ref={threeContainerRef}
+        className="absolute inset-0"
+        style={{ zIndex: viewMode === "3d" ? 10 : -1, height: '100%', width: '100%' }}
+      />
 
       {/* 2D Content */}
       <CameraZoomContext.Provider value={view.scale}>

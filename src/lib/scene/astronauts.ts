@@ -386,12 +386,14 @@ export class Astronauts {
   }
 
   setUniforms(uniforms: {
+    uTime?: number;
     uSunDirection?: THREE.Vector3;
     uSunColor?: THREE.Color;
     uSunIntensity?: number;
     uAmbientColor?: THREE.Color;
     uAmbientIntensity?: number;
   }): void {
+    if (uniforms.uTime !== undefined) this.material.uniforms.uTime.value = uniforms.uTime;
     if (uniforms.uSunDirection) this.material.uniforms.uSunDirection.value.copy(uniforms.uSunDirection);
     if (uniforms.uSunColor) this.material.uniforms.uSunColor.value.copy(uniforms.uSunColor);
     if (uniforms.uSunIntensity !== undefined) this.material.uniforms.uSunIntensity.value = uniforms.uSunIntensity;

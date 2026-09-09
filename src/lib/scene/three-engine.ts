@@ -476,6 +476,15 @@ export class ThreeEngine {
 
     this.astronauts?.update(time, dt);
     this.particles?.update(dt);
+
+    this.astronauts?.setUniforms({
+      uTime: time * 0.001,
+      uSunDirection: this.threeSky?.getSunLight()?.position.clone().normalize() ?? new THREE.Vector3(0, 1, 0),
+      uSunColor: this.threeSky?.getSunLight()?.color ?? new THREE.Color(0xffffee),
+      uSunIntensity: this.threeSky?.getSunLight()?.intensity ?? 1,
+      uAmbientColor: this.threeSky?.getAmbientLight()?.color ?? new THREE.Color(0x333344),
+      uAmbientIntensity: this.threeSky?.getAmbientLight()?.intensity ?? 0.5,
+    });
   }
 
   private dispose(): void {
