@@ -6,6 +6,14 @@ import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { SMAAPass } from 'three/addons/postprocessing/SMAAPass.js';
 import { ThreeCamera, CameraState } from './three-camera';
 import { ThreeSky, SkyConfig, SkyPreset } from './three-sky';
+import { createTerrainGeometry, createTerrainMaterial, TerrainConfig, PlanetPreset } from './terrain';
+import { createScatterMesh, ScatterConfig } from './scatter';
+import { createShip, ShipConfig, Ship } from './ship';
+import { createBuildingGeometry, createBuildingMaterials } from './buildings';
+import { createAstronauts, Astronauts, AstronautState } from './astronauts';
+import { createBadges } from './indicators';
+import { createParticleSystem } from './particles';
+import { HexCell, hexToWorld, allocateCells, HEX_SIZE } from './hex-grid';
 
 export interface ThreeEngineConfig {
   enableBloom?: boolean;
@@ -32,6 +40,16 @@ export class ThreeEngine {
 
   private threeCamera: ThreeCamera | null = null;
   private threeSky: ThreeSky | null = null;
+
+  private terrain: THREE.Mesh | null = null;
+  private scatter: THREE.InstancedMesh | null = null;
+  private ship: Ship | null = null;
+  private buildings: Map<string, THREE.Mesh> = new Map();
+  private astronauts: Astronauts | null = null;
+  private badges: ReturnType<typeof createBadges> | null = null;
+  private particles: ReturnType<typeof createParticleSystem> | null = null;
+  private floors: Map<string, HexCell[]> = new Map();
+  private agents: Map<string, AstronautState> = new Map();
 
   private config: Required<ThreeEngineConfig> = {
     enableBloom: true,
@@ -86,6 +104,8 @@ export class ThreeEngine {
     this.threeCamera = new ThreeCamera(this.camera, container);
     this.threeSky = new ThreeSky(this.scene, this.renderer);
     this.threeSky.setConfig(this.config.sky);
+
+    this.populateScene();
 
     this.initComposer();
 
@@ -233,7 +253,7 @@ export class ThreeEngine {
     if (!this.renderer || !this.scene || !this.camera || !this.threeCamera || !this.threeSky) return;
 
     const now = performance.now();
-    const dt = (now - this.lastFrameTime) / 1000;
+    const dt = Math.min((now - this.lastFrameTime) / 1000, 0.1);
     this.lastFrameTime = now;
 
     this.updateFPS(now);
@@ -244,6 +264,7 @@ export class ThreeEngine {
 
     this.threeCamera.update(dt);
     this.threeSky.update(now);
+    this.update(now, dt);
 
     if (this.composer && (this.config.enableBloom || this.config.enableSMAA)) {
       this.composer.render();
@@ -350,11 +371,152 @@ export class ThreeEngine {
     this.threeSky?.setConfig({ preset });
   }
 
+  populateScene(): void {
+    if (!this.scene) return;
+
+    this.createTerrain();
+    this.createScatter();
+    this.createShip();
+    this.badges = createBadges(320);
+    this.scene.add(this.badges.getMesh());
+    this.particles = createParticleSystem(10000);
+    this.scene.add(this.particles.getMesh());
+    this.astronauts = createAstronauts({ maxAgents: 64, rig: {
+      skeleton: { bones: [], calculateInverses: () => {} } as any,
+      bindMatrix: new THREE.Matrix4(),
+      bindMatrixInverse: new THREE.Matrix4(),
+      clips: new Map(),
+      boneCount: 22,
+      frameCount: 30,
+      headOffset: new THREE.Vector3(),
+      chestOffset: new THREE.Vector3(),
+      handOffsets: { left: new THREE.Vector3(), right: new THREE.Vector3() },
+    }});
+    for (const mesh of this.astronauts.getMeshes()) {
+      this.scene.add(mesh);
+    }
+  }
+
+  private createTerrain(): void {
+    const terrainConfig: TerrainConfig = {
+      preset: 'terra',
+      halfExtent: 56,
+      resolution: 112,
+    };
+    const geometry = createTerrainGeometry(terrainConfig);
+    const material = createTerrainMaterial();
+    this.terrain = new THREE.Mesh(geometry, material);
+    this.terrain.receiveShadow = true;
+    this.scene?.add(this.terrain);
+  }
+
+  private createScatter(): void {
+    if (!this.scene) return;
+    const config: ScatterConfig = {
+      halfExtent: 56,
+      density: 0.3,
+      planetPreset: 'terra',
+    };
+    const occupiedCells = new Map<string, HexCell>();
+    this.scatter = createScatterMesh(config, occupiedCells);
+    this.scene.add(this.scatter);
+  }
+
+  private createShip(): void {
+    this.ship = createShip({
+      position: new THREE.Vector3(0, 0, -30),
+      scale: 1,
+    });
+    this.scene?.add(this.ship.getGroup());
+  }
+
+  setFloors(floorIds: string[]): void {
+    if (!this.scene) return;
+
+    for (const id of floorIds) {
+      if (this.buildings.has(id)) continue;
+
+      const { geometry, recipe } = createBuildingGeometry(id);
+      const materials = createBuildingMaterials(new THREE.Color(0xff8800));
+      const mesh = new THREE.Mesh(geometry, materials[0]);
+      mesh.castShadow = true;
+      mesh.receiveShadow = true;
+      this.scene.add(mesh);
+      this.buildings.set(id, mesh);
+    }
+
+    for (const [id, mesh] of this.buildings) {
+      if (!floorIds.includes(id)) {
+        this.scene?.remove(mesh);
+        mesh.geometry.dispose();
+        if (Array.isArray(mesh.material)) {
+          mesh.material.forEach((m) => m.dispose());
+        } else {
+          mesh.material.dispose();
+        }
+        this.buildings.delete(id);
+      }
+    }
+  }
+
+  setAgents(agentStates: AstronautState[]): void {
+    if (!this.astronauts) return;
+
+    const currentIds = new Set(agentStates.map((a) => a.id));
+    for (const [id] of this.agents) {
+      if (!currentIds.has(id)) {
+        this.astronauts.removeAgent(id);
+      }
+    }
+
+    for (const state of agentStates) {
+      if (!this.agents.has(state.id)) {
+        this.astronauts.addAgent(state);
+      } else {
+        this.astronauts.updateAgent(state.id, state);
+      }
+    }
+
+    this.agents = new Map(agentStates.map((a) => [a.id, a]));
+  }
+
+  update(time: number, dt: number): void {
+    if (!this.mounted) return;
+
+    this.astronauts?.update(time, dt);
+    this.particles?.update(dt);
+  }
+
   private dispose(): void {
     this.threeCamera?.dispose();
     this.threeSky?.dispose();
     this.threeCamera = null;
     this.threeSky = null;
+
+    this.badges?.dispose();
+    this.particles?.dispose();
+    this.astronauts?.dispose();
+    this.ship?.dispose();
+
+    for (const mesh of this.buildings.values()) {
+      mesh.geometry.dispose();
+      if (Array.isArray(mesh.material)) {
+        mesh.material.forEach((m) => m.dispose());
+      } else {
+        mesh.material.dispose();
+      }
+    }
+    this.buildings.clear();
+
+    this.terrain?.geometry.dispose();
+    if (this.terrain && !Array.isArray(this.terrain.material)) {
+      this.terrain.material.dispose();
+    }
+
+    this.scatter?.geometry.dispose();
+    if (this.scatter && !Array.isArray(this.scatter.material)) {
+      this.scatter.material.dispose();
+    }
 
     if (this.scene) {
       this.scene.traverse((obj) => {
