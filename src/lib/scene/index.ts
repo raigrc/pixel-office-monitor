@@ -14,4 +14,6 @@ export * from "./building-shader";
 export * from "./crew-rig";
 export * from "./astronauts";
 export * from "./navigation";
+export * from "./indicators";
+export * from "./particles";
 export { getRoute, getSenderStartPosition, getRecipientHandoffPosition, getSenderReturnPosition, calculateFacing, getDistance } from "./routes";
