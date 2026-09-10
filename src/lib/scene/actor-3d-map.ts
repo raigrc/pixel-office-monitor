@@ -49,6 +49,8 @@ export function layoutFloorPositions(
 /**
  * Live monitor actors become astronaut states. Same pose logic as the 2D
  * renderer. System actors stay out, matching OfficeScene seating.
+ * Idle roster filler stays out too: only called agents appear.
+ * No 2D mirror. The colony shows who works, waits, or just finished.
  */
 export function mapActorsToAgents(
   actors: ActorInfo[],
@@ -62,6 +64,7 @@ export function mapActorsToAgents(
     const home = floorPositions.get(actor.floorId);
     if (!home) continue;
     const pose = getActorActivityPose(actor, invocations, now) as ActivityPose3D;
+    if (pose === 'idle') continue;
     const { clip, badge, working } = mapPoseToClipBadge(pose);
     const angle = (actor.seatIndex % 8) * (Math.PI / 4);
     const position = new THREE.Vector3(

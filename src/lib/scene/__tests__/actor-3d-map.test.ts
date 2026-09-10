@@ -61,12 +61,12 @@ describe('layoutFloorPositions', () => {
 });
 
 describe('mapActorsToAgents', () => {
-  it('maps live actors to agent states near their floor position', () => {
+  it('maps called actors to agent states near their floor position', () => {
     const floors = [floor('f1')];
     const positions = layoutFloorPositions(floors, null);
     const actors = [
       actor('a1', 'f1', { seatIndex: 0 }),
-      actor('a2', 'f1', { seatIndex: 3, activity: 'idle' }),
+      actor('a2', 'f1', { seatIndex: 3, activity: 'working', lastObservedAt: Date.now() }),
     ];
     const invocations: InvocationInfo[] = [];
     const agents = mapActorsToAgents(actors, invocations, positions);
@@ -76,7 +76,13 @@ describe('mapActorsToAgents', () => {
       expect(agent.position.distanceTo(floorPos)).toBeLessThan(10);
     }
     expect(agents[0].badge).toBe('working');
-    expect(agents[1].badge).toBe('none');
+    expect(agents[1].badge).toBe('working');
+  });
+
+  it('keeps idle roster filler out of the colony', () => {
+    const positions = layoutFloorPositions([floor('f1')], null);
+    const actors = [actor('sleeper', 'f1', { activity: 'idle' })];
+    expect(mapActorsToAgents(actors, [], positions)).toEqual([]);
   });
 
   it('skips system actors and actors on unknown floors', () => {

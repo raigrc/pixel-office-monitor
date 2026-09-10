@@ -57,8 +57,8 @@ function createBadgeAtlas(): THREE.CanvasTexture {
 
 const BADGE_VERTEX_SHADER = `
   attribute vec3 instancePosition;
-  attribute float instanceBadge;
-  attribute vec3 instanceColor;
+  attribute float aBadge;
+  attribute vec3 aTint;
 
   varying float vBadge;
   varying vec3 vColor;
@@ -67,8 +67,8 @@ const BADGE_VERTEX_SHADER = `
   uniform float uBadgeSize;
 
   void main() {
-    vBadge = instanceBadge;
-    vColor = instanceColor;
+    vBadge = aBadge;
+    vColor = aTint;
     vUv = uv;
 
     vec3 pos = position;
@@ -149,8 +149,8 @@ export class Badges {
 
     const badgeArray = new THREE.InstancedBufferAttribute(new Float32Array(this.maxAgents), 1);
     const colorArray = new THREE.InstancedBufferAttribute(new Float32Array(this.maxAgents * 3), 3);
-    geometry.setAttribute('instanceBadge', badgeArray);
-    geometry.setAttribute('instanceColor', colorArray);
+    geometry.setAttribute('aBadge', badgeArray);
+    geometry.setAttribute('aTint', colorArray);
 
     return mesh;
   }
@@ -192,11 +192,11 @@ export class Badges {
     this.dummy.updateMatrix();
     this.mesh.setMatrixAt(entry.index, this.dummy.matrix);
 
-    const badgeArray = this.mesh.geometry.getAttribute('instanceBadge') as THREE.InstancedBufferAttribute;
+    const badgeArray = this.mesh.geometry.getAttribute('aBadge') as THREE.InstancedBufferAttribute;
     badgeArray.setX(entry.index, badgeIndex);
     badgeArray.needsUpdate = true;
 
-    const colorArray = this.mesh.geometry.getAttribute('instanceColor') as THREE.InstancedBufferAttribute;
+    const colorArray = this.mesh.geometry.getAttribute('aTint') as THREE.InstancedBufferAttribute;
     colorArray.setXYZ(entry.index, color.r, color.g, color.b);
     colorArray.needsUpdate = true;
 
@@ -207,7 +207,7 @@ export class Badges {
     const entry = this.agentBadges.get(agentId);
     if (!entry) return;
 
-    const badgeArray = this.mesh.geometry.getAttribute('instanceBadge') as THREE.InstancedBufferAttribute;
+    const badgeArray = this.mesh.geometry.getAttribute('aBadge') as THREE.InstancedBufferAttribute;
     badgeArray.setX(entry.index, 0);
     badgeArray.needsUpdate = true;
 
@@ -219,8 +219,8 @@ export class Badges {
     let index = 0;
     for (const [agentId, entry] of this.agentBadges) {
       if (entry.index !== index) {
-        const badgeArray = this.mesh.geometry.getAttribute('instanceBadge') as THREE.InstancedBufferAttribute;
-        const colorArray = this.mesh.geometry.getAttribute('instanceColor') as THREE.InstancedBufferAttribute;
+        const badgeArray = this.mesh.geometry.getAttribute('aBadge') as THREE.InstancedBufferAttribute;
+        const colorArray = this.mesh.geometry.getAttribute('aTint') as THREE.InstancedBufferAttribute;
 
         badgeArray.setX(index, badgeArray.getX(entry.index));
         colorArray.setXYZ(index,

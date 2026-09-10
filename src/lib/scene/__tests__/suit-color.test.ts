@@ -50,7 +50,7 @@ describe('Astronaut suit colors and instance counts', () => {
     const crew = createAstronauts({ maxAgents: 4, rig: createCrewRig() });
     crew.addAgent(state('a', new THREE.Color(1, 0, 0)));
     const body = crew.getMeshes()[0];
-    const attr = body.geometry.getAttribute('instanceColor') as THREE.InstancedBufferAttribute;
+    const attr = body.geometry.getAttribute('aSuit') as THREE.InstancedBufferAttribute;
     expect(attr.getX(0)).toBeCloseTo(1, 5);
     expect(attr.getY(0)).toBeCloseTo(0, 5);
     expect(attr.getZ(0)).toBeCloseTo(0, 5);

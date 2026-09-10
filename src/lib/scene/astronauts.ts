@@ -109,7 +109,7 @@ function createFaceAtlas(): THREE.CanvasTexture {
 }
 
 const ASTRONAUT_VERTEX_SHADER = `
-  attribute vec3 instanceColor;
+  attribute vec3 aSuit;
   attribute float instanceFrame;
   attribute float instanceFace;
 
@@ -126,7 +126,7 @@ const ASTRONAUT_VERTEX_SHADER = `
   uniform float uAmbientIntensity;
 
   void main() {
-    vColor = instanceColor;
+    vColor = aSuit;
     vFaceUV = vec2(
       mod(instanceFace, 4.0) / 4.0 + 0.125 / 4.0,
       floor(instanceFace / 4.0) / 4.0 + 0.125 / 4.0
@@ -233,10 +233,12 @@ export class Astronauts {
 
     const instanceFrame = new THREE.InstancedBufferAttribute(new Float32Array(this.maxAgents), 1);
     const instanceFace = new THREE.InstancedBufferAttribute(new Float32Array(this.maxAgents), 1);
-    const instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(this.maxAgents * 3), 3);
+    // Named aSuit on purpose. instanceColor is reserved plumbing inside
+    // three and never reaches a custom shader from a geometry attribute.
+    const suitColor = new THREE.InstancedBufferAttribute(new Float32Array(this.maxAgents * 3), 3);
     bodyGeo.setAttribute('instanceFrame', instanceFrame);
     bodyGeo.setAttribute('instanceFace', instanceFace);
-    bodyGeo.setAttribute('instanceColor', instanceColor);
+    bodyGeo.setAttribute('aSuit', suitColor);
 
     this.helmetMesh = new THREE.InstancedMesh(helmetGeo, new THREE.MeshStandardMaterial({
       color: 0xffffff,
@@ -340,7 +342,7 @@ export class Astronauts {
     this.lampMesh.setMatrixAt(index, this.dummy.matrix);
     this.hammerMesh.setMatrixAt(index, this.dummy.matrix);
 
-    const colorArray = this.bodyMesh.geometry.getAttribute('instanceColor') as THREE.InstancedBufferAttribute | undefined;
+    const colorArray = this.bodyMesh.geometry.getAttribute('aSuit') as THREE.InstancedBufferAttribute | undefined;
     if (colorArray) {
       colorArray.setXYZ(index, agent.suitColor.r, agent.suitColor.g, agent.suitColor.b);
       colorArray.needsUpdate = true;

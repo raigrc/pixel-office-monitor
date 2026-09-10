@@ -24,7 +24,7 @@ vi.stubGlobal('document', {
 import { createBadges } from '../indicators';
 
 function readColor(badges: ReturnType<typeof createBadges>, index: number): [number, number, number] {
-  const attr = badges.getMesh().geometry.getAttribute('instanceColor') as THREE.InstancedBufferAttribute;
+  const attr = badges.getMesh().geometry.getAttribute('aTint') as THREE.InstancedBufferAttribute;
   return [attr.getX(index), attr.getY(index), attr.getZ(index)];
 }
 
