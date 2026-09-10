@@ -7,14 +7,15 @@ import { SMAAPass } from 'three/addons/postprocessing/SMAAPass.js';
 import { ThreeCamera, CameraState } from './three-camera';
 import { ThreeSky, SkyConfig, SkyPreset } from './three-sky';
 import { createTerrainGeometry, createTerrainMaterial, TerrainConfig, PlanetPreset } from './terrain';
-import { createScatterMesh, ScatterConfig } from './scatter';
+import { createScatterMesh, rebuildScatter, ScatterConfig } from './scatter';
 import { createShip, ShipConfig, Ship } from './ship';
 import { createBuildingGeometry } from './buildings';
 import { createAstronauts, Astronauts, AstronautState } from './astronauts';
 import { createCrewRig } from './crew-rig';
 import { createBadges } from './indicators';
 import { createParticleSystem } from './particles';
-import { HexCell, hexToWorld, hexToKey, allocateCells, HEX_SIZE, DECK_TOP } from './hex-grid';
+import { HexCell, hexToKey, HEX_SIZE, DECK_TOP } from './hex-grid';
+import { Colony } from './colony';
 
 export interface ThreeEngineConfig {
   enableBloom?: boolean;
@@ -29,6 +30,12 @@ function accentFor(id: string): THREE.Color {
   let hash = 0;
   for (let i = 0; i < id.length; i++) hash = (hash * 31 + id.charCodeAt(i)) >>> 0;
   return new THREE.Color().setHSL((hash % 360) / 360, 0.75, 0.55);
+}
+
+function sameKeys(a: Set<string>, b: Set<string>): boolean {
+  if (a.size !== b.size) return false;
+  for (const key of a) if (!b.has(key)) return false;
+  return true;
 }
 
 /** Aspect falls back to 16:9 when the container has no size yet. */
@@ -63,9 +70,18 @@ export class ThreeEngine {
   private astronauts: Astronauts | null = null;
   private badges: ReturnType<typeof createBadges> | null = null;
   private particles: ReturnType<typeof createParticleSystem> | null = null;
-  private floors: Map<string, HexCell[]> = new Map();
   private agents: Map<string, AstronautState> = new Map();
   private populated = false;
+  private colony = new Colony();
+  private lastScatterKeys = new Set<string>();
+
+  private shipPosition(): THREE.Vector3 {
+    return new THREE.Vector3(0, 0, -44);
+  }
+
+  private shipRadius(): number {
+    return 15;
+  }
 
   private config: Required<ThreeEngineConfig> = {
     enableBloom: true,
@@ -93,6 +109,7 @@ export class ThreeEngine {
     this.container = container;
     this.mounted = true;
     if (config) this.config = { ...this.config, ...config };
+    this.colony.load();
 
     this.renderer = new THREE.WebGLRenderer({
       antialias: this.config.enableSMAA,
@@ -357,14 +374,9 @@ export class ThreeEngine {
     return this.mounted && this.scene !== null;
   }
 
-  /** World position of each placed floor building, keyed by floor id. */
+  /** World position of each known plot, active and fallow. */
   getFloorPositions(): Map<string, THREE.Vector3> {
-    const out = new Map<string, THREE.Vector3>();
-    for (const [id, cells] of this.floors) {
-      const first = cells[0];
-      if (first) out.set(id, hexToWorld(first.q, first.r));
-    }
-    return out;
+    return this.colony.positions();
   }
 
   getCamera(): THREE.PerspectiveCamera | null {
@@ -445,14 +457,36 @@ export class ThreeEngine {
       planetPreset: 'terra',
     };
     const occupiedCells = new Map<string, HexCell>();
-    this.scatter = createScatterMesh(config, occupiedCells);
+    this.scatter = createScatterMesh(config, occupiedCells, this.shipPosition(), this.shipRadius());
+    this.scene.add(this.scatter);
+    this.lastScatterKeys = new Set();
+  }
+
+  /** Rebuild scatter when the plot footprint changes so rocks miss decks. */
+  private syncScatterFootprint(): void {
+    if (!this.scene || !this.scatter) return;
+    const keys = this.colony.occupiedKeys();
+    if (sameKeys(keys, this.lastScatterKeys)) return;
+    this.lastScatterKeys = keys;
+    const cells = new Map<string, HexCell>();
+    for (const plot of this.colony.plotsList()) {
+      for (const cell of plot.cells) cells.set(hexToKey(cell.q, cell.r), cell);
+    }
+    this.scene.remove(this.scatter);
+    this.scatter = rebuildScatter(
+      this.scatter,
+      { halfExtent: 56, density: 0.12, planetPreset: 'terra' },
+      cells,
+      this.shipPosition(),
+      this.shipRadius()
+    );
     this.scene.add(this.scatter);
   }
 
   private createShip(): void {
     // Landmark scale. Hull reads against 1.7-tall agents, not above them.
     this.ship = createShip({
-      position: new THREE.Vector3(0, 0, -44),
+      position: this.shipPosition(),
       scale: 0.45,
     });
     this.scene?.add(this.ship.getGroup());
@@ -461,64 +495,47 @@ export class ThreeEngine {
   setFloors(floorIds: string[]): void {
     if (!this.scene) return;
 
-    // Sticky hex allocation. Previous cells anchor the layout so floors
-    // keep their plots across snapshots.
-    const previous = new Map<string, HexCell>();
-    for (const cells of this.floors.values()) {
-      for (const cell of cells) previous.set(hexToKey(cell.q, cell.r), cell);
-    }
-    const { cells } = allocateCells(
-      floorIds.map((id, i) => ({ id, priority: floorIds.length - i, cellCount: 1 })),
-      previous.size > 0 ? previous : null
-    );
-    const nextFloors = new Map<string, HexCell[]>();
-    for (const cell of cells.values()) {
-      if (!cell.projectId) continue;
-      const list = nextFloors.get(cell.projectId) ?? [];
-      list.push(cell);
-      nextFloors.set(cell.projectId, list);
-    }
-    this.floors = nextFloors;
+    this.colony.reconcile(floorIds);
+    const plots = new Map(this.colony.plotsList().map((p) => [p.floorId, p]));
 
-    for (const id of floorIds) {
-      const at = this.floors.get(id)?.[0];
-      if (!at) continue;
-      const pos = hexToWorld(at.q, at.r);
-      const accent = accentFor(id);
+    for (const plot of plots.values()) {
+      const pos = this.colony.positionOf(plot.floorId);
+      if (!pos) continue;
+      const accent = accentFor(plot.floorId);
+      // Fallow plots keep their ground, dimmed.
+      const tone = plot.status === 'fallow' ? 0.4 : 1;
 
-      let deck = this.decks.get(id);
+      let deck = this.decks.get(plot.floorId);
       if (!deck) {
         const deckGeo = new THREE.CylinderGeometry(HEX_SIZE * 1.12, HEX_SIZE * 1.12, DECK_TOP, 6);
-        const deckMat = new THREE.MeshStandardMaterial({
-          color: accent.clone().multiplyScalar(0.35),
-          roughness: 0.85,
-          metalness: 0.15,
-        });
+        const deckMat = new THREE.MeshStandardMaterial({ roughness: 0.85, metalness: 0.15 });
         deck = new THREE.Mesh(deckGeo, deckMat);
         deck.receiveShadow = true;
         this.scene.add(deck);
-        this.decks.set(id, deck);
+        this.decks.set(plot.floorId, deck);
       }
       deck.position.set(pos.x, 0, pos.z);
+      (deck.material as THREE.MeshStandardMaterial).color.copy(accent).multiplyScalar(0.35 * tone);
 
-      const existing = this.buildings.get(id);
+      const existing = this.buildings.get(plot.floorId);
       if (existing) {
         existing.position.set(pos.x, DECK_TOP, pos.z);
+        (existing.material as THREE.MeshStandardMaterial).color.copy(accent).multiplyScalar(tone);
         continue;
       }
 
-      const { geometry } = createBuildingGeometry(id);
-      const material = new THREE.MeshStandardMaterial({ color: accent });
+      const { geometry } = createBuildingGeometry(plot.floorId);
+      const material = new THREE.MeshStandardMaterial({ color: accent.clone().multiplyScalar(tone) });
       const mesh = new THREE.Mesh(geometry, material);
       mesh.position.set(pos.x, DECK_TOP, pos.z);
       mesh.castShadow = true;
       mesh.receiveShadow = true;
       this.scene.add(mesh);
-      this.buildings.set(id, mesh);
+      this.buildings.set(plot.floorId, mesh);
     }
 
     for (const [id, mesh] of this.buildings) {
-      if (!floorIds.includes(id)) {
+      if (!plots.has(id)) {
         this.scene?.remove(mesh);
         mesh.geometry.dispose();
         if (Array.isArray(mesh.material)) {
@@ -531,7 +548,7 @@ export class ThreeEngine {
     }
 
     for (const [id, deck] of this.decks) {
-      if (!floorIds.includes(id)) {
+      if (!plots.has(id)) {
         this.scene?.remove(deck);
         deck.geometry.dispose();
         if (Array.isArray(deck.material)) {
@@ -542,6 +559,8 @@ export class ThreeEngine {
         this.decks.delete(id);
       }
     }
+
+    this.syncScatterFootprint();
   }
 
   setAgents(agentStates: AstronautState[]): void {
@@ -646,7 +665,8 @@ export class ThreeEngine {
     this.terrain = null;
     this.scatter = null;
     this.buildings.clear();
-    this.floors.clear();
+    this.decks.clear();
+    this.lastScatterKeys = new Set();
     this.agents.clear();
     this.populated = false;
   }
