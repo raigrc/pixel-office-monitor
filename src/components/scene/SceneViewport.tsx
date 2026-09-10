@@ -124,10 +124,13 @@ export default function SceneViewport({ children, className }: SceneViewportProp
       )}
 
       {/* View Mode Toggle Button */}
+      {/* Fixed above page chrome: main carries z-[1], so an absolute
+          button buries under header, sidebar, and sheets. */}
       <button
         onClick={toggleViewMode}
-        className="absolute top-3 right-3 z-20 px-3 py-1.5 rounded-lg text-xs font-medium transition-all duration-200"
+        className="fixed right-3 z-[60] px-3 py-1.5 rounded-lg text-xs font-medium transition-all duration-200"
         style={{
+          top: "4.25rem",
           background: "rgba(0, 0, 0, 0.6)",
           color: "#fff",
           border: "1px solid rgba(255, 255, 255, 0.2)",

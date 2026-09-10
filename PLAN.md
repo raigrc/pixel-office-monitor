@@ -371,6 +371,7 @@ npm run build   # must pass before commit
 - [2026-09-06] v2 runtime shipped — root-floor grouping, stable actor/invocation identity, event ring, handoff presentation, floor management.
 - [2026-09-07] Static-fit `OfficeScene`, SSE freshness indicator, sprite-sheet animation timing, and plugin actor attribution hardened.
 - [2026-09-08] Monitor/desk/lamp overlap fixes, improved generated character frames, query-cursor SSE replay fix, client token cleanup, lint error cleanup, and docs synchronization completed.
+- [2026-09-10] 3D boot-bug fix pass — sky clock (Date.now), sky radius inside far plane, canvas CSS pinned to container, PCFShadowMap, SMAA before OutputPass, populate guard + dispose registry reset, hex-placed buildings with per-floor accent, scatter as plain Mesh, badge color index fix, pointer-capture guards, live SSE state wiring via actor-3d-map, toggle button above page chrome. Failing repro tests landed first (13 new), full suite 230/230, tsc/build/lint(0 errors) green.
 
 ---
 

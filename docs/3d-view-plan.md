@@ -3,7 +3,7 @@
 > **Source repo studied:** https://github.com/Station-Sciences/bot-crossing  
 > **Integration strategy:** Add 3D as a toggleable 3rd view mode inside `SceneViewport`. The existing 2D pixel-art renderer is untouched. Both views consume the same `PresentationController` state.  
 > **Created:** 2026-09-09  
-> **Status:** Planning — no files changed yet
+> **Status:** In progress — boot path, scene shell, hex layout, buildings, crew, navigation, and indicators landed; boot-bug fix pass 2026-09-10 (sky clock, canvas sizing, live state wiring, scatter mesh, badge colors, pass order)
 
 ---
 

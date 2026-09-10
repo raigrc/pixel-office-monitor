@@ -9,12 +9,12 @@ import { ThreeSky, SkyConfig, SkyPreset } from './three-sky';
 import { createTerrainGeometry, createTerrainMaterial, TerrainConfig, PlanetPreset } from './terrain';
 import { createScatterMesh, ScatterConfig } from './scatter';
 import { createShip, ShipConfig, Ship } from './ship';
-import { createBuildingGeometry, createBuildingMaterials } from './buildings';
+import { createBuildingGeometry } from './buildings';
 import { createAstronauts, Astronauts, AstronautState } from './astronauts';
 import { createCrewRig } from './crew-rig';
 import { createBadges } from './indicators';
 import { createParticleSystem } from './particles';
-import { HexCell, hexToWorld, allocateCells, HEX_SIZE } from './hex-grid';
+import { HexCell, hexToWorld, hexToKey, allocateCells, HEX_SIZE } from './hex-grid';
 
 export interface ThreeEngineConfig {
   enableBloom?: boolean;
@@ -22,6 +22,19 @@ export interface ThreeEngineConfig {
   renderScale?: number;
   autoQuality?: boolean;
   sky?: Partial<SkyConfig>;
+}
+
+/** Deterministic accent color per floor id. Stable across snapshots. */
+function accentFor(id: string): THREE.Color {
+  let hash = 0;
+  for (let i = 0; i < id.length; i++) hash = (hash * 31 + id.charCodeAt(i)) >>> 0;
+  return new THREE.Color().setHSL((hash % 360) / 360, 0.75, 0.55);
+}
+
+/** Aspect falls back to 16:9 when the container has no size yet. */
+function safeAspect(w: number, h: number): number {
+  if (w < 1 || h < 1) return 16 / 9;
+  return w / h;
 }
 
 export class ThreeEngine {
@@ -43,7 +56,7 @@ export class ThreeEngine {
   private threeSky: ThreeSky | null = null;
 
   private terrain: THREE.Mesh | null = null;
-  private scatter: THREE.InstancedMesh | null = null;
+  private scatter: THREE.Mesh | null = null;
   private ship: Ship | null = null;
   private buildings: Map<string, THREE.Mesh> = new Map();
   private astronauts: Astronauts | null = null;
@@ -51,6 +64,7 @@ export class ThreeEngine {
   private particles: ReturnType<typeof createParticleSystem> | null = null;
   private floors: Map<string, HexCell[]> = new Map();
   private agents: Map<string, AstronautState> = new Map();
+  private populated = false;
 
   private config: Required<ThreeEngineConfig> = {
     enableBloom: true,
@@ -85,15 +99,20 @@ export class ThreeEngine {
       preserveDrawingBuffer: true,
     });
     this.renderer.setPixelRatio(1);
+    // Backing store follows renderScale. CSS stays pinned so the canvas
+    // always fills its container instead of shrinking with the buffer.
+    this.renderer.domElement.style.width = '100%';
+    this.renderer.domElement.style.height = '100%';
+    this.renderer.domElement.style.display = 'block';
     this.updateRendererSize();
     this.renderer.shadowMap.enabled = true;
-    this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    this.renderer.shadowMap.type = THREE.PCFShadowMap;
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
     this.renderer.toneMappingExposure = 1.0;
 
     this.camera = new THREE.PerspectiveCamera(
       50,
-      container.clientWidth / container.clientHeight,
+      safeAspect(container.clientWidth, container.clientHeight),
       0.1,
       200
     );
@@ -131,17 +150,18 @@ export class ThreeEngine {
       new THREE.Vector2(this.container.clientWidth * this.config.renderScale, this.container.clientHeight * this.config.renderScale),
       0.6,
       0.92,
-      0.85
+      0.92
     );
     this.bloomPass.enabled = this.config.enableBloom;
     this.composer.addPass(this.bloomPass);
 
-    this.outputPass = new OutputPass();
-    this.composer.addPass(this.outputPass);
-
+    // SMAA works in linear space, so it runs before OutputPass tonemapping.
     this.smaaPass = new SMAAPass();
     this.smaaPass.enabled = this.config.enableSMAA;
     this.composer.addPass(this.smaaPass);
+
+    this.outputPass = new OutputPass();
+    this.composer.addPass(this.outputPass);
   }
 
   private updateRendererSize(): void {
@@ -264,7 +284,8 @@ export class ThreeEngine {
     }
 
     this.threeCamera.update(dt);
-    this.threeSky.update(now);
+    // Sky wants epoch millis. performance.now() reads as 1970 night.
+    this.threeSky.update(Date.now());
     this.update(now, dt);
 
     if (this.composer && (this.config.enableBloom || this.config.enableSMAA)) {
@@ -313,8 +334,11 @@ export class ThreeEngine {
 
   resize(): void {
     if (!this.renderer || !this.camera || !this.container) return;
+    const w = this.container.clientWidth;
+    const h = this.container.clientHeight;
+    if (w < 1 || h < 1) return;
 
-    this.camera.aspect = this.container.clientWidth / this.container.clientHeight;
+    this.camera.aspect = w / h;
     this.camera.updateProjectionMatrix();
     this.updateRendererSize();
     this.updateComposerSize();
@@ -328,8 +352,18 @@ export class ThreeEngine {
     return this.currentViewMode;
   }
 
-  getScene(): THREE.Scene | null {
-    return this.scene;
+  isMounted(): boolean {
+    return this.mounted && this.scene !== null;
+  }
+
+  /** World position of each placed floor building, keyed by floor id. */
+  getFloorPositions(): Map<string, THREE.Vector3> {
+    const out = new Map<string, THREE.Vector3>();
+    for (const [id, cells] of this.floors) {
+      const first = cells[0];
+      if (first) out.set(id, hexToWorld(first.q, first.r));
+    }
+    return out;
   }
 
   getCamera(): THREE.PerspectiveCamera | null {
@@ -373,7 +407,8 @@ export class ThreeEngine {
   }
 
   populateScene(): void {
-    if (!this.scene) return;
+    if (!this.scene || this.populated) return;
+    this.populated = true;
 
     this.createTerrain();
     this.createScatter();
@@ -424,12 +459,39 @@ export class ThreeEngine {
   setFloors(floorIds: string[]): void {
     if (!this.scene) return;
 
-    for (const id of floorIds) {
-      if (this.buildings.has(id)) continue;
+    // Sticky hex allocation. Previous cells anchor the layout so floors
+    // keep their plots across snapshots.
+    const previous = new Map<string, HexCell>();
+    for (const cells of this.floors.values()) {
+      for (const cell of cells) previous.set(hexToKey(cell.q, cell.r), cell);
+    }
+    const { cells } = allocateCells(
+      floorIds.map((id, i) => ({ id, priority: floorIds.length - i, cellCount: 1 })),
+      previous.size > 0 ? previous : null
+    );
+    const nextFloors = new Map<string, HexCell[]>();
+    for (const cell of cells.values()) {
+      if (!cell.projectId) continue;
+      const list = nextFloors.get(cell.projectId) ?? [];
+      list.push(cell);
+      nextFloors.set(cell.projectId, list);
+    }
+    this.floors = nextFloors;
 
-      const { geometry, recipe } = createBuildingGeometry(id);
-      const materials = createBuildingMaterials(new THREE.Color(0xff8800));
-      const mesh = new THREE.Mesh(geometry, materials[0]);
+    for (const id of floorIds) {
+      const at = this.floors.get(id)?.[0];
+      if (!at) continue;
+      const pos = hexToWorld(at.q, at.r);
+      const existing = this.buildings.get(id);
+      if (existing) {
+        existing.position.copy(pos);
+        continue;
+      }
+
+      const { geometry } = createBuildingGeometry(id);
+      const material = new THREE.MeshStandardMaterial({ color: accentFor(id) });
+      const mesh = new THREE.Mesh(geometry, material);
+      mesh.position.copy(pos);
       mesh.castShadow = true;
       mesh.receiveShadow = true;
       this.scene.add(mesh);
@@ -532,6 +594,19 @@ export class ThreeEngine {
     }
 
     this.renderer?.dispose();
+
+    // Drop every runtime registry so the next mount starts clean.
+    // Stale agent ids on a fresh Astronauts registry render invisible agents.
+    this.badges = null;
+    this.particles = null;
+    this.astronauts = null;
+    this.ship = null;
+    this.terrain = null;
+    this.scatter = null;
+    this.buildings.clear();
+    this.floors.clear();
+    this.agents.clear();
+    this.populated = false;
   }
 }
 

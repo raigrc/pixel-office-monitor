@@ -78,7 +78,11 @@ export class ThreeCamera {
     this.lastPointer.set(event.clientX, event.clientY);
     this.dragStartState = { ...this.state, target: this.state.target.clone() };
     this.resetIdleTimer();
-    this.domElement.setPointerCapture(event.pointerId);
+    try {
+      this.domElement.setPointerCapture(event.pointerId);
+    } catch {
+      // Synthesized events carry no capturable pointer. Drag still tracks.
+    }
   };
 
   private onPointerMove = (event: PointerEvent): void => {
@@ -102,7 +106,13 @@ export class ThreeCamera {
     this.isDragging = false;
     this.dragType = null;
     this.dragStartState = null;
-    this.domElement.releasePointerCapture(event.pointerId);
+    try {
+      if (this.domElement.hasPointerCapture?.(event.pointerId)) {
+        this.domElement.releasePointerCapture(event.pointerId);
+      }
+    } catch {
+      // Pointer already released. Nothing to drop.
+    }
     this.resetIdleTimer();
   };
 
