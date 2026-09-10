@@ -13,7 +13,9 @@ import { createBuildingGeometry } from './buildings';
 import { createAstronauts, Astronauts, AstronautState } from './astronauts';
 import { createCrewRig } from './crew-rig';
 import { createBadges } from './indicators';
+import type { BadgeType } from './indicators';
 import { createParticleSystem } from './particles';
+import { stepToward, WALK_SPEED, LEAVE_SPEED } from './walkers';
 import { HexCell, hexToKey, HEX_SIZE, DECK_TOP } from './hex-grid';
 import { Colony } from './colony';
 
@@ -74,6 +76,10 @@ export class ThreeEngine {
   private populated = false;
   private colony = new Colony();
   private lastScatterKeys = new Set<string>();
+  private leaving = new Set<string>();
+  private baseClips = new Map<string, string>();
+  private prevBadges = new Map<string, string>();
+  private emitTimers = new Map<string, number>();
 
   private shipPosition(): THREE.Vector3 {
     return new THREE.Vector3(0, 0, -44);
@@ -567,28 +573,48 @@ export class ThreeEngine {
     if (!this.astronauts) return;
 
     const currentIds = new Set(agentStates.map((a) => a.id));
-    for (const [id] of this.agents) {
-      if (!currentIds.has(id)) {
-        this.astronauts.removeAgent(id);
+    for (const [id, agent] of this.agents) {
+      if (!currentIds.has(id) && !this.leaving.has(id) && this.ship) {
+        // Walk back to the ship before unmounting.
+        this.leaving.add(id);
+        agent.target.copy(this.ship.getRampBottom());
       }
     }
 
+    const spawn = this.ship?.getRampBottom().clone() ?? new THREE.Vector3();
     for (const state of agentStates) {
-      if (!this.agents.has(state.id)) {
-        this.astronauts.addAgent(state);
+      const live = this.agents.get(state.id);
+      if (!live) {
+        this.leaving.delete(state.id);
+        const spawned: AstronautState = {
+          ...state,
+          position: spawn.clone(),
+          target: state.position.clone(),
+        };
+        this.baseClips.set(state.id, state.clip);
+        this.agents.set(state.id, spawned);
+        this.astronauts.addAgent(spawned);
+        this.particles?.emit('dust', spawn, 6);
       } else {
-        this.astronauts.updateAgent(state.id, state);
+        live.target.copy(state.position);
+        live.clip = state.clip;
+        live.badge = state.badge;
+        live.working = state.working;
+        live.suitColor = state.suitColor;
+        live.faceIndex = state.faceIndex;
+        this.baseClips.set(state.id, state.clip);
+        this.astronauts.updateAgent(state.id, live);
       }
     }
-
-    this.agents = new Map(agentStates.map((a) => [a.id, a]));
   }
 
   update(time: number, dt: number): void {
     if (!this.mounted) return;
 
+    this.updateWalkers(dt);
     this.astronauts?.update(time, dt);
     this.particles?.update(dt);
+    this.syncBadgesAndParticles(dt);
 
     this.astronauts?.setUniforms({
       uTime: time * 0.001,
@@ -598,6 +624,71 @@ export class ThreeEngine {
       uAmbientColor: this.threeSky?.getAmbientLight()?.color ?? new THREE.Color(0x333344),
       uAmbientIntensity: this.threeSky?.getAmbientLight()?.intensity ?? 0.5,
     });
+  }
+
+  /** Walkers integrate toward targets. Leavers board the ship, then unmount. */
+  private updateWalkers(dt: number): void {
+    if (!this.astronauts) return;
+    for (const [id, agent] of this.agents) {
+      const leaving = this.leaving.has(id);
+      const arrived = stepToward(agent.position, agent.target, leaving ? LEAVE_SPEED : WALK_SPEED, dt);
+      if (arrived) {
+        agent.clip = this.baseClips.get(id) ?? agent.clip;
+        if (leaving) {
+          this.astronauts.removeAgent(id);
+          this.badges?.clearBadge(id);
+          this.agents.delete(id);
+          this.leaving.delete(id);
+          this.baseClips.delete(id);
+          this.prevBadges.delete(id);
+          this.emitTimers.delete(id);
+        }
+      } else {
+        agent.clip = 'walk';
+      }
+    }
+  }
+
+  private toBadgeType(value: string): BadgeType {
+    switch (value) {
+      case 'blocked':
+      case 'working':
+      case 'waiting':
+      case 'celebrating':
+      case 'spawn':
+      case 'leave':
+        return value;
+      default:
+        return 'none';
+    }
+  }
+
+  /** Badges mirror poses. Particles fire on work beats, cheer entries, sleep. */
+  private syncBadgesAndParticles(dt: number): void {
+    if (!this.astronauts) return;
+    for (const [id, agent] of this.agents) {
+      const badge = this.leaving.has(id) ? 'leave' : agent.badge;
+      const head = agent.position.clone();
+      head.y += 2.2;
+      this.badges?.setBadge(id, this.toBadgeType(badge), agent.position, agent.suitColor);
+
+      const prev = this.prevBadges.get(id);
+      if (prev !== 'celebrating' && badge === 'celebrating') {
+        this.particles?.emit('confetti', head, 12);
+      }
+      this.prevBadges.set(id, badge);
+
+      const timer = (this.emitTimers.get(id) ?? 0) + dt;
+      if (badge === 'working' && timer > 0.8) {
+        this.particles?.emit('spark', head, 3);
+        this.emitTimers.set(id, 0);
+      } else if (badge === 'none' && timer > 2) {
+        this.particles?.emit('z', head, 1);
+        this.emitTimers.set(id, 0);
+      } else {
+        this.emitTimers.set(id, timer);
+      }
+    }
   }
 
   private dispose(): void {
@@ -668,6 +759,10 @@ export class ThreeEngine {
     this.decks.clear();
     this.lastScatterKeys = new Set();
     this.agents.clear();
+    this.leaving.clear();
+    this.baseClips.clear();
+    this.prevBadges.clear();
+    this.emitTimers.clear();
     this.populated = false;
   }
 }

@@ -10,7 +10,7 @@ const POSE_TO_CLIP_BADGE: Record<ActivityPose3D, { clip: string; badge: string; 
   work: { clip: 'work', badge: 'working', working: true },
   seat: { clip: 'sitIdle', badge: 'waiting', working: false },
   success: { clip: 'cheer', badge: 'celebrating', working: false },
-  idle: { clip: 'idle', badge: 'none', working: false },
+  idle: { clip: 'sitIdle', badge: 'none', working: false },
 };
 
 export function mapPoseToClipBadge(pose: ActivityPose3D): { clip: string; badge: string; working: boolean } {

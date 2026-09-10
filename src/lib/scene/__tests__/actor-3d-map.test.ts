@@ -41,7 +41,7 @@ describe('mapPoseToClipBadge', () => {
     expect(mapPoseToClipBadge('work')).toEqual({ clip: 'work', badge: 'working', working: true });
     expect(mapPoseToClipBadge('seat')).toEqual({ clip: 'sitIdle', badge: 'waiting', working: false });
     expect(mapPoseToClipBadge('success')).toEqual({ clip: 'cheer', badge: 'celebrating', working: false });
-    expect(mapPoseToClipBadge('idle')).toEqual({ clip: 'idle', badge: 'none', working: false });
+    expect(mapPoseToClipBadge('idle')).toEqual({ clip: 'sitIdle', badge: 'none', working: false });
   });
 });
 
