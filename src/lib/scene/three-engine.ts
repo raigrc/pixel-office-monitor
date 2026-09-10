@@ -14,7 +14,7 @@ import { createAstronauts, Astronauts, AstronautState } from './astronauts';
 import { createCrewRig } from './crew-rig';
 import { createBadges } from './indicators';
 import { createParticleSystem } from './particles';
-import { HexCell, hexToWorld, hexToKey, allocateCells, HEX_SIZE } from './hex-grid';
+import { HexCell, hexToWorld, hexToKey, allocateCells, HEX_SIZE, DECK_TOP } from './hex-grid';
 
 export interface ThreeEngineConfig {
   enableBloom?: boolean;
@@ -59,6 +59,7 @@ export class ThreeEngine {
   private scatter: THREE.Mesh | null = null;
   private ship: Ship | null = null;
   private buildings: Map<string, THREE.Mesh> = new Map();
+  private decks: Map<string, THREE.Mesh> = new Map();
   private astronauts: Astronauts | null = null;
   private badges: ReturnType<typeof createBadges> | null = null;
   private particles: ReturnType<typeof createParticleSystem> | null = null;
@@ -440,7 +441,7 @@ export class ThreeEngine {
     if (!this.scene) return;
     const config: ScatterConfig = {
       halfExtent: 56,
-      density: 0.3,
+      density: 0.12,
       planetPreset: 'terra',
     };
     const occupiedCells = new Map<string, HexCell>();
@@ -449,9 +450,10 @@ export class ThreeEngine {
   }
 
   private createShip(): void {
+    // Landmark scale. Hull reads against 1.7-tall agents, not above them.
     this.ship = createShip({
-      position: new THREE.Vector3(0, 0, -30),
-      scale: 1,
+      position: new THREE.Vector3(0, 0, -44),
+      scale: 0.45,
     });
     this.scene?.add(this.ship.getGroup());
   }
@@ -482,16 +484,33 @@ export class ThreeEngine {
       const at = this.floors.get(id)?.[0];
       if (!at) continue;
       const pos = hexToWorld(at.q, at.r);
+      const accent = accentFor(id);
+
+      let deck = this.decks.get(id);
+      if (!deck) {
+        const deckGeo = new THREE.CylinderGeometry(HEX_SIZE * 1.12, HEX_SIZE * 1.12, DECK_TOP, 6);
+        const deckMat = new THREE.MeshStandardMaterial({
+          color: accent.clone().multiplyScalar(0.35),
+          roughness: 0.85,
+          metalness: 0.15,
+        });
+        deck = new THREE.Mesh(deckGeo, deckMat);
+        deck.receiveShadow = true;
+        this.scene.add(deck);
+        this.decks.set(id, deck);
+      }
+      deck.position.set(pos.x, 0, pos.z);
+
       const existing = this.buildings.get(id);
       if (existing) {
-        existing.position.copy(pos);
+        existing.position.set(pos.x, DECK_TOP, pos.z);
         continue;
       }
 
       const { geometry } = createBuildingGeometry(id);
-      const material = new THREE.MeshStandardMaterial({ color: accentFor(id) });
+      const material = new THREE.MeshStandardMaterial({ color: accent });
       const mesh = new THREE.Mesh(geometry, material);
-      mesh.position.copy(pos);
+      mesh.position.set(pos.x, DECK_TOP, pos.z);
       mesh.castShadow = true;
       mesh.receiveShadow = true;
       this.scene.add(mesh);
@@ -508,6 +527,19 @@ export class ThreeEngine {
           mesh.material.dispose();
         }
         this.buildings.delete(id);
+      }
+    }
+
+    for (const [id, deck] of this.decks) {
+      if (!floorIds.includes(id)) {
+        this.scene?.remove(deck);
+        deck.geometry.dispose();
+        if (Array.isArray(deck.material)) {
+          deck.material.forEach((m) => m.dispose());
+        } else {
+          deck.material.dispose();
+        }
+        this.decks.delete(id);
       }
     }
   }
@@ -569,6 +601,16 @@ export class ThreeEngine {
       }
     }
     this.buildings.clear();
+
+    for (const deck of this.decks.values()) {
+      deck.geometry.dispose();
+      if (Array.isArray(deck.material)) {
+        deck.material.forEach((m) => m.dispose());
+      } else {
+        deck.material.dispose();
+      }
+    }
+    this.decks.clear();
 
     this.terrain?.geometry.dispose();
     if (this.terrain && !Array.isArray(this.terrain.material)) {

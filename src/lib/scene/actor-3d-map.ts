@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import type { ActorInfo, FloorInfo, InvocationInfo } from '../monitor-types';
 import { getActorActivityPose } from './actor-pose';
-import { allocateCells, hexToWorld, type HexCell } from './hex-grid';
+import { allocateCells, hexToWorld, DECK_TOP, type HexCell } from './hex-grid';
 import type { AstronautState } from './astronauts';
 
 export type ActivityPose3D = 'work' | 'seat' | 'success' | 'idle';
@@ -66,7 +66,7 @@ export function mapActorsToAgents(
     const angle = (actor.seatIndex % 8) * (Math.PI / 4);
     const position = new THREE.Vector3(
       home.x + Math.cos(angle) * 2.4,
-      0,
+      DECK_TOP,
       home.z + Math.sin(angle) * 2.4
     );
     agents.push({

@@ -303,11 +303,13 @@ export class Astronauts {
     this.agents.set(agent.id, agent);
     this.updateInstance(agent);
     this.agentCount++;
+    this.syncCounts();
   }
 
   removeAgent(id: string): void {
     this.agents.delete(id);
     this.rebuildInstances();
+    this.syncCounts();
   }
 
   updateAgent(id: string, updates: Partial<AstronautState>): void {
@@ -336,7 +338,7 @@ export class Astronauts {
     this.lampMesh.setMatrixAt(index, this.dummy.matrix);
     this.hammerMesh.setMatrixAt(index, this.dummy.matrix);
 
-    const colorArray = this.bodyMesh.instanceColor as THREE.InstancedBufferAttribute;
+    const colorArray = this.bodyMesh.geometry.getAttribute('instanceColor') as THREE.InstancedBufferAttribute | undefined;
     if (colorArray) {
       colorArray.setXYZ(index, agent.suitColor.r, agent.suitColor.g, agent.suitColor.b);
       colorArray.needsUpdate = true;
@@ -373,6 +375,17 @@ export class Astronauts {
       index++;
     }
     this.agentCount = this.agents.size;
+  }
+
+  /** Hide unfilled instances. Without this, idle slots render at origin. */
+  private syncCounts(): void {
+    this.bodyMesh.count = this.agentCount;
+    this.helmetMesh.count = this.agentCount;
+    this.visorMesh.count = this.agentCount;
+    this.backpackMesh.count = this.agentCount;
+    this.antennaMesh.count = this.agentCount;
+    this.lampMesh.count = this.agentCount;
+    this.hammerMesh.count = this.agentCount;
   }
 
   update(time: number, dt: number): void {

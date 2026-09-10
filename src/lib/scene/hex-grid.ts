@@ -10,7 +10,8 @@ export const HEX_DIRS = [
 ];
 
 export const HEX_SIZE = 1.5;
-export const DECK_TOP = 0.45;
+// Deck slabs sit above the worst terrain relief (TERRAIN_HALF_RANGE).
+export const DECK_TOP = 0.6;
 
 export interface HexCell {
   q: number;
