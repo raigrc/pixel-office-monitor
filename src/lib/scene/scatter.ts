@@ -105,7 +105,7 @@ export function createScatterMesh(
   occupiedCells: Map<string, HexCell>,
   shipPosition: THREE.Vector3 = new THREE.Vector3(0, 0, -30),
   shipRadius: number = 15
-): THREE.InstancedMesh {
+): THREE.Mesh {
   const { halfExtent, density, planetPreset } = config;
   const preset = SCATTER_PRESETS[planetPreset];
 
@@ -149,8 +149,7 @@ export function createScatterMesh(
 
   const totalCount = positions.length;
   if (totalCount === 0) {
-    const emptyGeo = new THREE.BufferGeometry();
-    return new THREE.InstancedMesh(emptyGeo, new THREE.MeshStandardMaterial(), 1);
+    return new THREE.Mesh(new THREE.BufferGeometry(), new THREE.MeshStandardMaterial());
   }
 
   const mergedGeometry = new THREE.BufferGeometry();
@@ -194,20 +193,21 @@ export function createScatterMesh(
     metalness: 0.05,
   });
 
-  const mesh = new THREE.InstancedMesh(mergedGeometry, material, 1);
-  mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
-  mesh.count = totalCount;
+  const mesh = new THREE.Mesh(mergedGeometry, material);
+
+  // Source part geometries served their purpose. Free them.
+  for (const geo of geometries) geo.dispose();
 
   return mesh;
 }
 
 export function rebuildScatter(
-  mesh: THREE.InstancedMesh,
+  mesh: THREE.Mesh,
   config: ScatterConfig,
   occupiedCells: Map<string, HexCell>,
   shipPosition: THREE.Vector3,
   shipRadius: number
-): THREE.InstancedMesh {
+): THREE.Mesh {
   mesh.geometry.dispose();
   if (Array.isArray(mesh.material)) {
     mesh.material.forEach((m) => m.dispose());

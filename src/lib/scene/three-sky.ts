@@ -8,6 +8,16 @@ export interface SkyConfig {
   liveMode: boolean;
 }
 
+/**
+ * Converts epoch millis to fractional hours of day.
+ * Input must be Date.now() scale. Boot-clock values (performance.now()
+ * scale) land near 1970 and read ~0, so misuse stays visible as night.
+ */
+export function deriveTimeOfDayFromEpoch(epochMs: number): number {
+  const date = new Date(epochMs);
+  return date.getHours() + date.getMinutes() / 60 + date.getSeconds() / 3600;
+}
+
 const SKY_PRESETS: Record<SkyPreset, {
   zenith: THREE.Color;
   horizon: THREE.Color;
@@ -103,7 +113,8 @@ export class ThreeSky {
   }
 
   private createSky(): void {
-    const geometry = new THREE.SphereGeometry(500, 32, 16);
+    // Radius stays inside the engine camera far plane (200).
+    const geometry = new THREE.SphereGeometry(150, 32, 16);
     geometry.scale(-1, 1, 1);
 
     this.skyMaterial = new THREE.ShaderMaterial({
@@ -158,8 +169,7 @@ export class ThreeSky {
 
     let timeOfDay = this.config.timeOfDay;
     if (this.config.liveMode && timeMs !== undefined) {
-      const date = new Date(timeMs);
-      timeOfDay = date.getHours() + date.getMinutes() / 60 + date.getSeconds() / 3600;
+      timeOfDay = deriveTimeOfDayFromEpoch(timeMs);
       this.config.timeOfDay = timeOfDay;
     }
 

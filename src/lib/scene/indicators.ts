@@ -204,9 +204,9 @@ export class Badges {
 
         badgeArray.setX(index, badgeArray.getX(entry.index));
         colorArray.setXYZ(index,
-          colorArray.getX(entry.index * 3),
-          colorArray.getY(entry.index * 3),
-          colorArray.getZ(entry.index * 3)
+          colorArray.getX(entry.index),
+          colorArray.getY(entry.index),
+          colorArray.getZ(entry.index)
         );
 
         entry.index = index;

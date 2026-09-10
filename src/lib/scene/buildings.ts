@@ -180,7 +180,7 @@ export function createBuildingGeometry(floorId: string): { geometry: THREE.Buffe
   let vertexOffset = 0;
 
   for (const part of recipe.parts) {
-    let geo = part.geometry.clone();
+    const geo = part.geometry.clone();
 
     if (part.scale) {
       geo.scale(part.scale.x, part.scale.y, part.scale.z);
