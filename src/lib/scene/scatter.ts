@@ -188,9 +188,9 @@ export function createScatterMesh(
   mergedGeometry.computeBoundingSphere();
 
   const SCATTER_TINTS = {
-    luna: 0x8a8a9a,
-    mars: 0x9a5a3a,
-    terra: 0x51604a,
+    luna: 0x9aa0ae,
+    mars: 0xa06844,
+    terra: 0x6b7a5e,
   } as const;
 
   const material = new THREE.MeshStandardMaterial({

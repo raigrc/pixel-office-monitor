@@ -95,6 +95,30 @@ describe('Buildings', () => {
       expect(height).toBeLessThan(10);
     });
 
+    it('should never roll the flat pad for a floor', () => {
+      for (let i = 0; i < 20; i++) {
+        const { recipe } = createBuildingGeometry(`floor-roll-${i}`);
+        expect(recipe.height).toBeGreaterThanOrEqual(1.5);
+      }
+    });
+
+    it('should produce human-scale bounds that sit near the deck', () => {
+      // Guards the buried-building class of bug: geometry must rise
+      // from near y=0 and fit inside a deck of radius ~1.7.
+      for (const id of ['proj:root-a', 'proj:root-b', 'proj:root-c']) {
+        const { geometry } = createBuildingGeometry(id);
+        geometry.computeBoundingBox();
+        const box = geometry.boundingBox!;
+        const size = new THREE.Vector3();
+        box.getSize(size);
+        expect(size.y).toBeGreaterThan(0.5);
+        expect(size.y).toBeLessThan(8);
+        expect(size.x).toBeLessThan(4);
+        expect(size.z).toBeLessThan(4);
+        expect(box.min.y).toBeGreaterThan(-0.5);
+      }
+    });
+
     it('should return footprint for any floor ID', () => {
       const footprint = getBuildingFootprint('footprint-test');
       expect(footprint).toBeGreaterThan(0);

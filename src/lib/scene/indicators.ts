@@ -104,6 +104,8 @@ const BADGE_FRAGMENT_SHADER = `
     else if (badgeIndex == 6) color = vec3(0.8, 0.4, 1.0);  // leave - purple
 
     gl_FragColor = vec4(color, tex.a);
+    #include <tonemapping_fragment>
+    #include <colorspace_fragment>
   }
 `;
 
@@ -112,7 +114,7 @@ export class Badges {
   private atlas: THREE.CanvasTexture;
   private material: THREE.ShaderMaterial;
   private maxAgents: number;
-  private agentBadges: Map<string, { index: number; type: BadgeType }> = new Map();
+  private agentBadges: Map<string, { index: number; type: BadgeType; pos: THREE.Vector3 }> = new Map();
 
   private dummy = new THREE.Object3D();
 
@@ -138,8 +140,9 @@ export class Badges {
   }
 
   private createMesh(): THREE.InstancedMesh {
+    // XY plane faces +z. updateView copies the camera quaternion per
+    // frame so quads face the viewer from every angle.
     const geometry = new THREE.PlaneGeometry(1, 1);
-    geometry.rotateX(-Math.PI / 2);
 
     const mesh = new THREE.InstancedMesh(geometry, this.material, this.maxAgents);
     mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
@@ -159,17 +162,34 @@ export class Badges {
     if (!entry) {
       const index = this.agentBadges.size;
       if (index >= this.maxAgents) return;
-      entry = { index, type };
+      entry = { index, type, pos: new THREE.Vector3() };
       this.agentBadges.set(agentId, entry);
     }
 
     entry.type = type;
+    entry.pos.copy(position);
+    entry.pos.y += 2.2;
 
-    this.dummy.position.copy(position);
-    this.dummy.position.y += 2.2;
-    this.dummy.lookAt(new THREE.Vector3(0, 1.7, 0));
+    this.writeInstance(entry, badgeIndex, color);
+  }
+
+  /** Faces every badge at the camera. Call once per frame after setBadge. */
+  updateView(quaternion: THREE.Quaternion): void {
+    for (const entry of this.agentBadges.values()) {
+      this.dummy.position.copy(entry.pos);
+      this.dummy.quaternion.copy(quaternion);
+      this.dummy.scale.setScalar(1);
+      this.dummy.updateMatrix();
+      this.mesh.setMatrixAt(entry.index, this.dummy.matrix);
+    }
+    this.mesh.instanceMatrix.needsUpdate = true;
+  }
+
+  private writeInstance(entry: { index: number; type: BadgeType }, badgeIndex: number, color: THREE.Color): void {
+    this.dummy.position.set(0, 0, 0);
+    this.dummy.quaternion.identity();
+    this.dummy.scale.setScalar(1);
     this.dummy.updateMatrix();
-
     this.mesh.setMatrixAt(entry.index, this.dummy.matrix);
 
     const badgeArray = this.mesh.geometry.getAttribute('instanceBadge') as THREE.InstancedBufferAttribute;

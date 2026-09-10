@@ -167,6 +167,8 @@ const ASTRONAUT_FRAGMENT_SHADER = `
     vec3 color = ambient + diffuse;
 
     gl_FragColor = vec4(color, 1.0);
+    #include <tonemapping_fragment>
+    #include <colorspace_fragment>
   }
 `;
 

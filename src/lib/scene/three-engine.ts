@@ -514,6 +514,8 @@ export class ThreeEngine {
       let deck = this.decks.get(plot.floorId);
       if (!deck) {
         const deckGeo = new THREE.CylinderGeometry(HEX_SIZE * 1.12, HEX_SIZE * 1.12, DECK_TOP, 6);
+        // Base at y=0, top face exactly at DECK_TOP.
+        deckGeo.translate(0, DECK_TOP / 2, 0);
         const deckMat = new THREE.MeshStandardMaterial({ roughness: 0.85, metalness: 0.15 });
         deck = new THREE.Mesh(deckGeo, deckMat);
         deck.receiveShadow = true;
@@ -533,6 +535,8 @@ export class ThreeEngine {
       const { geometry } = createBuildingGeometry(plot.floorId);
       const material = new THREE.MeshStandardMaterial({ color: accent.clone().multiplyScalar(tone) });
       const mesh = new THREE.Mesh(geometry, material);
+      // Footprints run larger than plots. A uniform 0.6 keeps roofs on decks.
+      mesh.scale.setScalar(0.6);
       mesh.position.set(pos.x, DECK_TOP, pos.z);
       mesh.castShadow = true;
       mesh.receiveShadow = true;
@@ -688,6 +692,9 @@ export class ThreeEngine {
       } else {
         this.emitTimers.set(id, timer);
       }
+    }
+    if (this.camera) {
+      this.badges?.updateView(this.camera.quaternion);
     }
   }
 
