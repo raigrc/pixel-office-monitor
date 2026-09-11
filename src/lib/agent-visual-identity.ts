@@ -32,7 +32,7 @@ export const AGENT_VISUAL_IDENTITIES = {
   documentation: { accent: "#9C806D", detail: "#D9C4B5", accessory: "document", deskPropSet: "documentation" },
   "project-manager": { accent: "#A58C58", detail: "#D9C894", accessory: "comms", deskPropSet: "project-manager" },
   "qa-engineer": { accent: "#A66F76", detail: "#D7ADB2", accessory: "sensor", deskPropSet: "qa-engineer" },
-  researcher: { accent: "#5F8F8A", detail: "#A9CFCA", accessory: "document", deskPropSet: "researcher" },
+  researcher: { accent: "#5F8F8A", detail: "#A9CFCA", accessory: "sensor", deskPropSet: "researcher" },
   "security-reviewer": { accent: "#747E93", detail: "#B5BED0", accessory: "shield", deskPropSet: "security-reviewer" },
   "senior-engineer": { accent: "#6E7FAE", detail: "#B4BFDD", accessory: "device", deskPropSet: "senior-engineer" },
   explore: { accent: "#6E9470", detail: "#B5D1B4", accessory: "sensor", deskPropSet: "explore" },

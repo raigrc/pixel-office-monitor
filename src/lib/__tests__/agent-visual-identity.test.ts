@@ -19,4 +19,9 @@ describe("agent visual identity", () => {
     expect(resolveAgentAccent("architect", "#22C55E")).toBe("#22C55E");
     expect(resolveAgentAccent("architect")).toBe(AGENT_VISUAL_IDENTITIES.architect.accent);
   });
+
+  it("separates architect drafting from researcher scanning", () => {
+    expect(AGENT_VISUAL_IDENTITIES.architect.accessory).toBe("document");
+    expect(AGENT_VISUAL_IDENTITIES.researcher.accessory).toBe("sensor");
+  });
 });

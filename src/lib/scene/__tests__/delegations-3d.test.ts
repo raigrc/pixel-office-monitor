@@ -31,6 +31,10 @@ describe("Delegations3D", () => {
 
     expect(scene.children).toHaveLength(2);
     expect(scene.children.every((child) => child.visible)).toBe(true);
+    const path = scene.children.find((child) => child instanceof THREE.LineSegments);
+    const token = scene.children.find((child) => child instanceof THREE.Mesh);
+    expect(path?.geometry.getAttribute('position').count).toBe(144);
+    expect(token?.geometry).toBeInstanceOf(THREE.OctahedronGeometry);
     delegations.reconcile([]);
     expect(scene.children).toHaveLength(0);
   });

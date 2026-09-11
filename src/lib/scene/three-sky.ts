@@ -23,15 +23,15 @@ export const DUSK_EVENING_END = 20;
  * carries a cool directional fill (see NIGHT_FILL_INTENSITY): readability
  * beats physical realism for a monitoring UI.
  */
-export const NIGHT_AMBIENT_FLOOR = 0.22;
+export const NIGHT_AMBIENT_FLOOR = 0.48;
 /** Cool directional fill at full night. Zero at full day. */
-export const NIGHT_FILL_INTENSITY = 0.3;
+export const NIGHT_FILL_INTENSITY = 0.65;
 export const NIGHT_FILL_HEX = 0x9db8e8;
 /** Cool neutral fill used as the night ambient color. */
 export const NIGHT_AMBIENT_HEX = 0x8fa3c7;
-const NIGHT_ZENITH_HEX = 0x070b16;
-const NIGHT_HORIZON_HEX = 0x101a2e;
-const NIGHT_GROUND_HEX = 0x04060b;
+const NIGHT_ZENITH_HEX = 0x0b1326;
+const NIGHT_HORIZON_HEX = 0x182b4a;
+const NIGHT_GROUND_HEX = 0x08101c;
 /** Warm horizon glow blended in during dawn/dusk transitions. */
 const DUSK_WARM_HEX = 0xb45a2a;
 
@@ -132,8 +132,8 @@ export function computeLightingProfile(timeOfDay: number, preset: SkyPreset): Li
   // terrain relief, so night keeps a cool directional component.
   const fillIntensity = (1 - daylight) * NIGHT_FILL_INTENSITY;
 
-  // Day formula unchanged from the pre-1.5 profile; night lands on the
-  // explicit readable floor instead of ~0.05.
+  // Keep ambient above the UI readability floor at every hour. Directional
+  // sun still provides clear day/night contrast.
   const dayAmbient = (0.2 + 0.5 * Math.max(0, elevationSin)) * base.ambientIntensity;
   const ambientIntensity =
     NIGHT_AMBIENT_FLOOR + Math.max(0, dayAmbient - NIGHT_AMBIENT_FLOOR) * daylight;

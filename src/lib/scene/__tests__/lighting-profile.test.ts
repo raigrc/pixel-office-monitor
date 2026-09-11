@@ -61,6 +61,15 @@ describe('readable night floor (1.5C)', () => {
     }
   });
 
+  it('keeps full-night terrain lighting readable without directional sun', () => {
+    for (const preset of PRESETS) {
+      const night = computeLightingProfile(2, preset);
+      expect(night.ambientIntensity).toBeGreaterThanOrEqual(0.45);
+      expect(night.fillIntensity).toBeGreaterThanOrEqual(0.6);
+      expect(night.ambientIntensity + night.fillIntensity).toBeGreaterThanOrEqual(1.05);
+    }
+  });
+
   it('holds full day sun at noon and a reduced dusk response', () => {
     const noon = computeLightingProfile(12, 'terra');
     expect(noon.sunIntensity).toBeGreaterThan(1);
@@ -129,10 +138,9 @@ describe('smooth transitions (1.5B)', () => {
     for (const preset of PRESETS) {
       const night = computeLightingProfile(2, preset);
       const day = computeLightingProfile(12, preset);
-      expect(night.ambientIntensity).toBeLessThanOrEqual(day.ambientIntensity);
       // Total light strictly separates night from day on every preset.
-      expect(night.sunIntensity + night.ambientIntensity).toBeLessThan(
-        day.sunIntensity + day.ambientIntensity,
+      expect(night.sunIntensity + night.ambientIntensity + night.fillIntensity).toBeLessThan(
+        day.sunIntensity + day.ambientIntensity + day.fillIntensity,
       );
       const [r, g, b] = channels(night.horizonHex);
       expect(r + g + b).toBeGreaterThan(0);

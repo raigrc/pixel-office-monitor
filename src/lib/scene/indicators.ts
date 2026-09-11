@@ -1,14 +1,14 @@
 import * as THREE from 'three';
 
 export const MAX_AGENT_CAP = 320;
-export const BADGE_SIZE = 0.5;
+export const BADGE_SIZE = 0.42;
 
 export type BadgeType = 'none' | 'blocked' | 'working' | 'waiting' | 'celebrating' | 'spawn' | 'leave';
 
 const BADGE_SDFS: Record<BadgeType, string> = {
   none: '',
   blocked: '!',
-  working: '⚒',
+  working: 'W',
   waiting: '?',
   celebrating: '✓',
   spawn: '▼',
@@ -38,8 +38,13 @@ function createBadgeAtlas(): THREE.CanvasTexture {
 
     if (type === 'none') return;
 
-    ctx.font = `bold ${size}px monospace`;
+    ctx.beginPath();
     ctx.fillStyle = '#ffffff';
+    ctx.arc(x + size / 2, y + size / 2, size * 0.48, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.font = `bold ${size * 0.62}px monospace`;
+    ctx.fillStyle = '#080b12';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.fillText(BADGE_SDFS[type], x + size / 2, y + size / 2);
@@ -109,7 +114,7 @@ const BADGE_FRAGMENT_SHADER = `
     else if (badgeIndex == 5) color = vec3(0.4, 0.6, 1.0);  // spawn - blue
     else if (badgeIndex == 6) color = vec3(0.8, 0.4, 1.0);  // leave - purple
 
-    gl_FragColor = vec4(color, tex.a);
+    gl_FragColor = vec4(mix(vec3(0.02), color, tex.r), tex.a);
     #include <tonemapping_fragment>
     #include <colorspace_fragment>
   }
@@ -137,11 +142,11 @@ export class Badges {
       fragmentShader: BADGE_FRAGMENT_SHADER,
       uniforms: {
         badgeAtlas: { value: this.atlas },
-        uBadgeSize: { value: 0.5 },
+        uBadgeSize: { value: BADGE_SIZE },
       },
       transparent: true,
       depthWrite: false,
-      depthTest: true,
+      depthTest: false,
     });
   }
 
@@ -152,6 +157,7 @@ export class Badges {
 
     const mesh = new THREE.InstancedMesh(geometry, this.material, this.maxAgents);
     mesh.count = 0;
+    mesh.renderOrder = 6;
     mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
 
     const badgeArray = new THREE.InstancedBufferAttribute(new Float32Array(this.maxAgents), 1);
@@ -175,7 +181,7 @@ export class Badges {
 
     entry.type = type;
     entry.pos.copy(position);
-    entry.pos.y += 2.2;
+    entry.pos.y += 2.35;
 
     this.writeInstance(entry, badgeIndex, color);
     this.mesh.count = this.agentBadges.size;

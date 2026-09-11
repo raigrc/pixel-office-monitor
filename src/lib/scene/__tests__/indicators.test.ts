@@ -9,6 +9,9 @@ const mockContext = {
   textAlign: '',
   textBaseline: '',
   fillText: vi.fn(),
+  beginPath: vi.fn(),
+  arc: vi.fn(),
+  fill: vi.fn(),
 };
 
 const mockCanvas = {
@@ -52,7 +55,7 @@ describe('Badges index rebuild', () => {
 
     const mesh = badges.getMesh();
     const expected = new THREE.Matrix4().compose(
-      new THREE.Vector3(2, 2.2, 3),
+      new THREE.Vector3(2, 2.35, 3),
       camera.quaternion,
       new THREE.Vector3(1, 1, 1)
     );
@@ -73,7 +76,7 @@ describe('Badges index rebuild', () => {
     badges.getMesh().getMatrixAt(0, m);
     const pos = new THREE.Vector3().setFromMatrixPosition(m);
     expect(pos.x).toBeCloseTo(5, 5);
-    expect(pos.y).toBeCloseTo(2.2, 5);
+    expect(pos.y).toBeCloseTo(2.35, 5);
     expect(pos.z).toBeCloseTo(5, 5);
     badges.dispose();
   });

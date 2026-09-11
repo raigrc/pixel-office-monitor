@@ -186,7 +186,8 @@ const ASTRONAUT_FRAGMENT_SHADER = `
     float NdotF = max(dot(N, F), 0.0);
     diffuse += vColor * uFillColor * NdotF * uFillIntensity;
     vec3 ambient = vColor * uAmbientColor * uAmbientIntensity;
-    vec3 color = ambient + diffuse;
+    float identityFloor = mix(0.28, 0.68, smoothstep(0.0, 1.0, uSunIntensity));
+    vec3 color = max(ambient + diffuse, vColor * identityFloor);
 
     gl_FragColor = vec4(color, 1.0);
     #include <tonemapping_fragment>
@@ -277,7 +278,6 @@ export class Astronauts {
       color: 0xffffff,
       roughness: 0.8,
       metalness: 0.2,
-      vertexColors: true,
     }), this.maxAgents);
 
     this.antennaMesh = new THREE.InstancedMesh(antennaGeo, new THREE.MeshStandardMaterial({
@@ -307,47 +307,49 @@ export class Astronauts {
   private createAccessoryGeometry(family: AgentAccessoryFamily): THREE.BufferGeometry {
     switch (family) {
       case 'sensor': {
-        const geometry = new THREE.TorusGeometry(0.12, 0.035, 4, 8);
-        geometry.translate(0.34, 1.45, 0.24);
+        const geometry = new THREE.TorusGeometry(0.18, 0.045, 5, 10);
+        geometry.rotateX(Math.PI / 2);
+        geometry.translate(0.38, 1.46, 0.25);
         return geometry;
       }
       case 'document': {
-        const geometry = new THREE.BoxGeometry(0.1, 0.34, 0.16);
-        geometry.rotateZ(-Math.PI / 5);
-        geometry.translate(0.38, 1.2, 0.18);
+        const geometry = new THREE.BoxGeometry(0.34, 0.44, 0.055);
+        geometry.rotateZ(-Math.PI / 8);
+        geometry.translate(0.4, 1.25, 0.27);
         return geometry;
       }
       case 'tool': {
-        const geometry = new THREE.CylinderGeometry(0.045, 0.045, 0.48, 5);
+        const geometry = new THREE.CylinderGeometry(0.055, 0.075, 0.56, 6);
         geometry.rotateZ(-Math.PI / 4);
-        geometry.translate(0.38, 1.1, 0.2);
+        geometry.translate(0.42, 1.16, 0.24);
         return geometry;
       }
       case 'comms': {
-        const geometry = new THREE.BoxGeometry(0.1, 0.28, 0.18);
-        geometry.translate(0.3, 1.82, 0.04);
+        const geometry = new THREE.TorusGeometry(0.2, 0.05, 5, 10, Math.PI * 1.35);
+        geometry.rotateY(Math.PI / 2);
+        geometry.translate(0.27, 1.84, 0.02);
         return geometry;
       }
       case 'shield': {
-        const geometry = new THREE.CircleGeometry(0.18, 6);
-        geometry.translate(0, 1.42, 0.31);
+        const geometry = new THREE.CircleGeometry(0.27, 6);
+        geometry.scale(0.82, 1.15, 1);
+        geometry.translate(-0.36, 1.3, 0.31);
         return geometry;
       }
       case 'device': {
-        const geometry = new THREE.BoxGeometry(0.34, 0.23, 0.06);
+        const geometry = new THREE.BoxGeometry(0.42, 0.3, 0.075);
         geometry.rotateZ(-Math.PI / 10);
-        geometry.translate(0.28, 1.2, 0.28);
+        geometry.translate(0.38, 1.2, 0.3);
         return geometry;
       }
     }
   }
 
   private createAccessoryMesh(family: AgentAccessoryFamily, geometry: THREE.BufferGeometry): THREE.InstancedMesh {
-    const mesh = new THREE.InstancedMesh(geometry, new THREE.MeshStandardMaterial({
+    const mesh = new THREE.InstancedMesh(geometry, new THREE.MeshBasicMaterial({
       color: 0xffffff,
-      roughness: 0.55,
-      metalness: 0.25,
-      vertexColors: true,
+      side: THREE.DoubleSide,
+      toneMapped: false,
     }), this.maxAgents);
     mesh.name = `role-accessory-${family}`;
     mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);

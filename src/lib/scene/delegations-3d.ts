@@ -3,8 +3,10 @@ import type { DirectDelegation } from "@/lib/activity/activity-model";
 
 interface DelegationVisual {
   relation: DirectDelegation;
-  line: THREE.Line;
+  line: THREE.LineSegments;
+  lineMaterial: THREE.LineBasicMaterial;
   token: THREE.Mesh;
+  tokenMaterial: THREE.MeshBasicMaterial;
   curve: THREE.QuadraticBezierCurve3;
   senderPosition: THREE.Vector3;
   recipientPosition: THREE.Vector3;
@@ -30,27 +32,32 @@ export class Delegations3D {
       const existing = this.visuals.get(relation.invocationId);
       if (existing) {
         existing.relation = relation;
-        const color = relation.lifecycle === "started" ? 0x62d9ff : 0xffc86a;
-        (existing.line.material as THREE.LineBasicMaterial).color.setHex(color);
-        (existing.token.material as THREE.MeshBasicMaterial).color.setHex(color);
+        const pathColor = relation.lifecycle === "started" ? 0x58c8e8 : 0xe8a94f;
+        const tokenColor = relation.lifecycle === "started" ? 0xd9f8ff : 0xffedb3;
+        existing.lineMaterial.color.setHex(pathColor);
+        existing.tokenMaterial.color.setHex(tokenColor);
         continue;
       }
-      const color = relation.lifecycle === "started" ? 0x62d9ff : 0xffc86a;
-      const line = new THREE.Line(
-        new THREE.BufferGeometry(),
-        new THREE.LineBasicMaterial({ color, transparent: true, opacity: 0.7 }),
-      );
+      const pathColor = relation.lifecycle === "started" ? 0x58c8e8 : 0xe8a94f;
+      const tokenColor = relation.lifecycle === "started" ? 0xd9f8ff : 0xffedb3;
+      const lineMaterial = new THREE.LineBasicMaterial({ color: pathColor, transparent: true, opacity: 0.88, depthTest: false });
+      const line = new THREE.LineSegments(new THREE.BufferGeometry(), lineMaterial);
+      const tokenMaterial = new THREE.MeshBasicMaterial({ color: tokenColor, depthTest: false });
       const token = new THREE.Mesh(
-        new THREE.SphereGeometry(0.12, 10, 8),
-        new THREE.MeshBasicMaterial({ color }),
+        new THREE.OctahedronGeometry(0.19, 0),
+        tokenMaterial,
       );
+      line.renderOrder = 4;
+      token.renderOrder = 5;
       line.frustumCulled = false;
       token.frustumCulled = false;
       this.scene.add(line, token);
       this.visuals.set(relation.invocationId, {
         relation,
         line,
+        lineMaterial,
         token,
+        tokenMaterial,
         curve: new THREE.QuadraticBezierCurve3(new THREE.Vector3(), new THREE.Vector3(), new THREE.Vector3()),
         senderPosition: new THREE.Vector3(Number.POSITIVE_INFINITY, 0, 0),
         recipientPosition: new THREE.Vector3(Number.POSITIVE_INFINITY, 0, 0),
@@ -76,7 +83,21 @@ export class Delegations3D {
         visual.curve.v2.copy(end).y += 1.8;
         visual.curve.v1.copy(visual.curve.v0).lerp(visual.curve.v2, 0.5);
         visual.curve.v1.y += Math.max(1, visual.curve.v0.distanceTo(visual.curve.v2) * 0.2);
-        visual.line.geometry.setFromPoints(visual.curve.getPoints(20));
+        const points = visual.curve.getPoints(24);
+        const segments: THREE.Vector3[] = [];
+        for (const offset of [-0.035, 0, 0.035]) {
+          for (let index = 1; index < points.length; index++) {
+            const previous = points[index - 1].clone();
+            const current = points[index].clone();
+            previous.y += offset;
+            current.y += offset;
+            segments.push(
+              previous,
+              current,
+            );
+          }
+        }
+        visual.line.geometry.setFromPoints(segments);
       }
       const progress = this.reducedMotion ? 0.5 : (timeMs * 0.00035 + this.phaseOffset(id)) % 1;
       visual.token.position.copy(visual.curve.getPoint(progress));
@@ -98,9 +119,9 @@ export class Delegations3D {
     if (!visual) return;
     this.scene.remove(visual.line, visual.token);
     visual.line.geometry.dispose();
-    (visual.line.material as THREE.Material).dispose();
+    visual.lineMaterial.dispose();
     visual.token.geometry.dispose();
-    (visual.token.material as THREE.Material).dispose();
+    visual.tokenMaterial.dispose();
     this.visuals.delete(id);
   }
 }

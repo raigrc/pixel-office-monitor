@@ -10,14 +10,17 @@ interface ThreeCanvasProps {
   world: WorldState;
   activity: ActivityModel;
   activeSessionId: string | null;
+  selectedActorId: string | null;
   onAgentClick: (actorId: string) => void;
 }
 
-export default function ThreeCanvas({ world, activity, activeSessionId, onAgentClick }: ThreeCanvasProps) {
+export default function ThreeCanvas({ world, activity, activeSessionId, selectedActorId, onAgentClick }: ThreeCanvasProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [identifiedActorId, setIdentifiedActorId] = useState<string | null>(null);
   const sessionKey = world.sessions.map((session) => session.id).sort().join(",");
-  const selectableActorIds = world.agents.map((agent) => agent.id);
+  const selectableActorIds = world.agents
+    .filter((agent) => agent.worldId === activeSessionId)
+    .map((agent) => agent.id);
   const identifiedActor = activity.actors.find((entry) => entry.actor.actorId === identifiedActorId);
 
   useEffect(() => {
@@ -61,6 +64,10 @@ export default function ThreeCanvas({ world, activity, activeSessionId, onAgentC
       threeEngine.focusSession(activeSessionId);
     }
   }, [activeSessionId, sessionKey]);
+
+  useEffect(() => {
+    if (threeEngine.isMounted()) threeEngine.setSelectedAgent(selectedActorId);
+  }, [selectedActorId]);
 
   return (
     <div

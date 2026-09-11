@@ -27,6 +27,7 @@ import { HexCell, hexToKey, getNeighbors, DECK_TOP } from './hex-grid';
 import { Colony } from './colony';
 import { suitColorFor } from './actor-3d-map';
 import { getAgentVisualIdentity } from '../agent-visual-identity';
+import { AgentSelectionMarker } from './selection-marker';
 import type { WorldAgent, WorldState } from '../world/world-types';
 import type { ActivityModel } from '../activity/activity-model';
 import { Delegations3D } from './delegations-3d';
@@ -97,6 +98,7 @@ export class ThreeEngine {
   private badges: ReturnType<typeof createBadges> | null = null;
   private particles: ReturnType<typeof createParticleSystem> | null = null;
   private delegations: Delegations3D | null = null;
+  private selectionMarker: AgentSelectionMarker | null = null;
   private agents: Map<string, AstronautState> = new Map();
   private orchestratorRings: Map<string, THREE.Mesh> = new Map();
   private ringGeometry: THREE.TorusGeometry | null = null;
@@ -466,6 +468,8 @@ export class ThreeEngine {
     this.delegations = new Delegations3D(this.scene);
     this.delegations.setReducedMotion(this.reducedMotion);
     if (this.activity) this.delegations.reconcile(this.activity.directDelegations);
+    this.selectionMarker = new AgentSelectionMarker();
+    this.scene.add(this.selectionMarker.getMesh());
   }
 
   private createTerrain(): void {
@@ -522,6 +526,11 @@ export class ThreeEngine {
     this.delegations?.setReducedMotion(enabled);
     if (enabled) this.particles?.clear();
     this.applyMotionDelta(this.motion.setReducedMotion(enabled));
+  }
+
+  setSelectedAgent(agentId: string | null): void {
+    this.selectionMarker?.setSelectedAgent(agentId);
+    this.selectionMarker?.update(this.agents);
   }
 
   /** Focus one session plot. Keeps the worksite prominent. */
@@ -839,6 +848,7 @@ export class ThreeEngine {
     this.applyMotionDelta(motionDelta);
     this.syncOrchestratorMarkers(motionDelta.upserted);
     this.delegations?.update(time, this.agents);
+    this.selectionMarker?.update(this.agents);
     this.astronauts?.update(time, dt);
     if (!this.reducedMotion) this.particles?.update(dt);
     this.syncBadgesAndParticles(dt);
@@ -925,6 +935,10 @@ export class ThreeEngine {
     this.particles?.dispose();
     this.astronauts?.dispose();
     this.delegations?.dispose();
+    if (this.selectionMarker) {
+      this.scene?.remove(this.selectionMarker.getMesh());
+      this.selectionMarker.dispose();
+    }
     this.ship?.dispose();
 
     for (const ring of this.orchestratorRings.values()) {
@@ -975,6 +989,7 @@ export class ThreeEngine {
     this.particles = null;
     this.astronauts = null;
     this.delegations = null;
+    this.selectionMarker = null;
     this.ship = null;
     this.terrain = null;
     this.scatter = null;

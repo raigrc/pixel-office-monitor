@@ -16,6 +16,7 @@ interface SceneViewportProps {
   world: WorldState;
   activity: ActivityModel;
   activeSessionId: string | null;
+  selectedActorId: string | null;
   onAgentClick: (actorId: string) => void;
   sidebarOpen?: boolean;
 }
@@ -28,7 +29,7 @@ const ThreeCanvas = dynamic(() => import("./ThreeCanvas"), { ssr: false });
  * centers it, and bleeds the office floor texture underneath so no
  * letterbox color ever shows.
  */
-export default function SceneViewport({ children, className, world, activity, activeSessionId, onAgentClick, sidebarOpen = true }: SceneViewportProps) {
+export default function SceneViewport({ children, className, world, activity, activeSessionId, selectedActorId, onAgentClick, sidebarOpen = true }: SceneViewportProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [view, setView] = useState({ scale: 1, x: 0, y: 0 });
   const [viewMode, setViewMode] = useState<"2d" | "3d">("2d");
@@ -105,7 +106,7 @@ export default function SceneViewport({ children, className, world, activity, ac
       {/* 3D Canvas. ThreeCanvas alone owns the engine lifecycle. */}
       {viewMode === "3d" && (
         <Suspense fallback={<div className="absolute inset-0 flex items-center justify-center text-white">Loading 3D...</div>}>
-          <ThreeCanvas world={world} activity={activity} activeSessionId={activeSessionId} onAgentClick={onAgentClick} />
+          <ThreeCanvas world={world} activity={activity} activeSessionId={activeSessionId} selectedActorId={selectedActorId} onAgentClick={onAgentClick} />
         </Suspense>
       )}
 

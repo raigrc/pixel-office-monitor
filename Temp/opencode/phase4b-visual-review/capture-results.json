@@ -1,0 +1,25 @@
+{
+  "baseUrl": "http://localhost:3011",
+  "projectId": "phase4b-review",
+  "screenshots": [
+    { "file": "01-2d-default.png", "viewport": "1280x800", "renderer": "2D", "time": "not applicable", "state": "Default 11-role 4-4-3 roster; orchestrator working; optional roles absent" },
+    { "file": "02-2d-busy-roles.png", "viewport": "1280x800", "renderer": "2D", "time": "not applicable", "state": "Architect, researcher, and explore working; devops, security-reviewer, and senior-engineer idle" },
+    { "file": "03-3d-day-roles.png", "viewport": "1280x800", "renderer": "3D", "time": "Manual 12:00", "state": "Orchestrator plus six representative working roles" },
+    { "file": "04-3d-night-roles.png", "viewport": "1280x800", "renderer": "3D", "time": "Manual 01:00", "state": "Orchestrator plus six representative working roles" },
+    { "file": "05-3d-busy-worksite.png", "viewport": "1280x800", "renderer": "3D", "time": "Manual 12:00", "state": "Orchestrator plus ten distinct working specialists" },
+    { "file": "06-working-priority.png", "viewport": "1280x800", "renderer": "3D", "time": "Manual 12:00", "state": "Researcher working among specialists in idle standby" },
+    { "file": "07-selected-agent.png", "viewport": "1280x800", "renderer": "3D and inspector", "time": "Manual 12:00", "state": "Orchestrator selected through keyboard interaction" },
+    { "file": "08-orchestrator-priority.png", "viewport": "1280x800", "renderer": "3D", "time": "Manual 12:00", "state": "Working orchestrator with idle specialists nearby" },
+    { "file": "09-delegation.png", "viewport": "1280x800", "renderer": "3D", "time": "Manual 12:00", "state": "Started orchestrator-to-architect delegation" },
+    { "file": "10-optional-role.png", "viewport": "1280x800", "renderer": "2D", "time": "not applicable", "state": "Explicitly observed build role appended as twelfth desk" },
+    { "file": "11-mobile-2d.png", "viewport": "390x844", "renderer": "2D", "time": "not applicable", "state": "Crowded working roster including optional build", "horizontalOverflow": false },
+    { "file": "12-mobile-3d.png", "viewport": "390x844", "renderer": "3D", "time": "Manual 12:00", "state": "Crowded working worksite including optional build", "horizontalOverflow": false },
+    { "file": "13-reduced-motion.png", "viewport": "1280x800", "renderer": "3D", "time": "Manual 12:00", "state": "Crowded worksite with prefers-reduced-motion: reduce" },
+    { "file": "14-error-state.png", "viewport": "1280x800", "renderer": "3D", "time": "Manual 12:00", "state": "Failed architect invocation outcome beat" },
+    { "file": "15-success-state.png", "viewport": "1280x800", "renderer": "3D", "time": "Manual 12:00", "state": "Succeeded researcher invocation outcome beat" },
+    { "file": "16-hover-agent.png", "viewport": "1280x800", "renderer": "3D", "time": "Manual 12:00", "state": "Keyboard-equivalent orchestrator hover label" }
+  ],
+  "browserErrors": [],
+  "sourceFixes": [],
+  "visualVerdict": "NEEDS ANOTHER PASS"
+}

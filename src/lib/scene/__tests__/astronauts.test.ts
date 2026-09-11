@@ -373,6 +373,9 @@ describe('Astronauts compaction (1.1D)', () => {
     expect(deviceScale.x).toBeCloseTo(1);
     expect(hiddenDeviceScale.x).toBeCloseTo(0);
     expect(sensorScale.x).toBeCloseTo(1);
+    const detailColor = new THREE.Color();
+    crew.getAccessoryMeshes().sensor.getColorAt(1, detailColor);
+    expect(detailColor.getHex()).toBe(0xffffff);
     crew.dispose();
   });
 });

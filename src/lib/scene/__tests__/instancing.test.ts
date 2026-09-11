@@ -105,6 +105,22 @@ describe('badge instanced shader (1.1A)', () => {
     expect(BADGE_VERTEX_SHADER).toContain('aTint');
     expect(BADGE_VERTEX_SHADER).toContain('uBadgeSize');
   });
+
+  it('keeps semantic badges visible above crowded geometry', () => {
+    const badges = createBadges(2);
+    badges.setBadge('working', 'working', new THREE.Vector3(1, 0.6, 2));
+    badges.updateView(new THREE.Quaternion());
+    const mesh = badges.getMesh();
+    const badge = mesh.geometry.getAttribute('aBadge');
+    const matrix = new THREE.Matrix4();
+    mesh.getMatrixAt(0, matrix);
+
+    expect(badge.getX(0)).toBe(2);
+    expect(new THREE.Vector3().setFromMatrixPosition(matrix).y).toBeCloseTo(2.95);
+    expect(Array.isArray(mesh.material)).toBe(false);
+    if (!Array.isArray(mesh.material)) expect(mesh.material.depthTest).toBe(false);
+    badges.dispose();
+  });
 });
 
 describe('multi-instance placement (1.1A/1.1D)', () => {
@@ -152,8 +168,8 @@ describe('multi-instance placement (1.1A/1.1D)', () => {
     badges.setBadge('b', 'waiting', new THREE.Vector3(-1, 0, 4), new THREE.Color(1, 1, 1));
     badges.updateView(new THREE.Quaternion());
     const mesh = badges.getMesh();
-    expectCloseTo(translationOf(mesh, 0), new THREE.Vector3(2, 2.2, 3));
-    expectCloseTo(translationOf(mesh, 1), new THREE.Vector3(-1, 2.2, 4));
+    expectCloseTo(translationOf(mesh, 0), new THREE.Vector3(2, 2.35, 3));
+    expectCloseTo(translationOf(mesh, 1), new THREE.Vector3(-1, 2.35, 4));
     badges.dispose();
   });
 });

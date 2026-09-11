@@ -968,7 +968,7 @@ Use captured or synthetic V2 events with explicit stable actor IDs and invocatio
 
 ## Phase 4 — Visual Identity & Polish
 
-**Status:** active. Phase 4A and Phase 4B implementation complete; visual approval pending. Later Phase 4 work remains paused.
+**Status:** active. Phase 4A, Phase 4B, and focused Phase 4B.1 corrections complete; user visual approval pending. Later Phase 4 work remains paused.
 
 ### Phase 4A - 2D office composition cleanup
 
@@ -1012,6 +1012,26 @@ Acceptance evidence:
 - [x] Full lint reports 0 errors and unchanged 54-warning baseline.
 - [x] Isolated browser checks pass with 11 distinct 2D role accents, one 3D canvas, readable reduced-motion astronauts and accessories, no mobile overflow, and zero browser errors.
 - [ ] User approves Phase 4B desktop, mobile, and 3D visual identity.
+
+### Phase 4B.1 - Focused 3D identity and semantic readability
+
+- Researcher now uses the sensor family while architect retains the document family.
+- Day and night suit accents retain a luminance floor without overriding semantic state colors.
+- Full-night terrain uses a `0.48` ambient floor, `0.65` cool relief fill, and lifted blue-black environment colors so plots and buildings remain readable.
+- Working and error badges use compact filled discs, readable glyphs, and foreground rendering.
+- Delegation uses one stronger batched path plus a brighter token.
+- Selected actors receive a persistent white foot ring distinct from the gold orchestrator ring.
+- Accessory and backpack materials use per-instance colors without an absent geometry-color attribute darkening them to black.
+
+Acceptance evidence:
+
+- [x] Architect/researcher and DevOps/security/senior-engineer silhouettes remain distinct in focused screenshots.
+- [x] Day, night, busy, working, error, delegation, mobile, and reduced-motion frames retain readable semantic hierarchy.
+- [x] Selection marker lifecycle and active-floor keyboard filtering have focused automated coverage.
+- [x] `npm test -- --run` passes 40 files and 371 tests; TypeScript passes. Previous production build remains green; concurrent rebuild skipped to protect user dev server chunks.
+- [x] Full lint reports 0 errors and unchanged 54-warning baseline.
+- [x] Final accessory colors were verified in real WebGL output after removing the conflicting geometry `vertexColors` flag.
+- [ ] User approves Phase 4B.1 visual corrections.
 
 - Complete visual direction for 2D and 3D delegation, outcomes, standby, actor identity, and missing 3D clips or badges.
 - Align typography, color, lighting, materials, sprite assets, sound policy, and motion timing across both views.
