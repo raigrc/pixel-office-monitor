@@ -37,15 +37,14 @@ export interface DeskAnchor {
 }
 
 /**
- * Fixed roster room: 15 desks (5 cols x 3 rows) matching ROSTER_KEYS order.
- * Seat N never moves. Bottom strip (y304+) holds decor props.
+ * Compact roster room: 16 possible desks in four columns. Default roles fill
+ * seats 0-10; observed optional roles append from seat 11 without gaps.
  */
 const SEAT_ORIGINS: Array<[number, number]> = [
-  [16, 48], [88, 48], [160, 48], [232, 48], [304, 48],
-  [16, 144], [88, 144], [160, 144], [232, 144], [304, 144],
-  [16, 240], [88, 240], [160, 240], [232, 240], [304, 240],
-  // Overflow visitor desk (bottom strip, clear of storage/whiteboard/coffee).
-  [200, 304],
+  [24, 48], [96, 48], [168, 48], [240, 48],
+  [24, 120], [96, 120], [168, 120], [240, 120],
+  [24, 192], [96, 192], [168, 192], [240, 192],
+  [24, 264], [96, 264], [168, 264], [240, 264],
 ];
 
 function makeDesk(ox: number, oy: number): DeskAnchor {
@@ -70,18 +69,17 @@ export const DESK_ANCHORS: Record<number, DeskAnchor> = Object.fromEntries(
 export const ORCHESTRATOR_SPOT: Point = { x: 88, y: 44 };
 
 export const WALK_LANES: Point[] = [
-  { x: 0, y: 128 },
-  { x: 384, y: 128 },
-  { x: 0, y: 224 },
-  { x: 384, y: 224 },
-  { x: 0, y: 348 },
-  { x: 384, y: 348 },
-  { x: 88, y: 0 },
-  { x: 88, y: 384 },
+  { x: 0, y: 112 },
+  { x: 384, y: 112 },
+  { x: 0, y: 184 },
+  { x: 384, y: 184 },
+  { x: 0, y: 256 },
+  { x: 384, y: 256 },
+  { x: 92, y: 0 },
+  { x: 92, y: 384 },
 ];
 
-// Walk spine runs the 8px aisle (gap between desk columns), not through desks.
-export const VERTICAL_SPINE_X = 84;
+export const VERTICAL_SPINE_X = 92;
 
 export function getRoute(from: Point, to: Point): Point[] {
   const route: Point[] = [];

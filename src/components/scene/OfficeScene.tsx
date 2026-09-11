@@ -7,7 +7,7 @@ import CharacterSprite from "./CharacterSprite";
 import DeskDecor from "./DeskDecor";
 import { useCameraZoom } from "./SceneViewport";
 import { actorActiveWorkCount, actorPose, type ActivityModel } from "@/lib/activity/activity-model";
-import { TILE_SIZE, OFFICE_DIMENSIONS, DESK_ANCHORS, getDeskAnchor, LAYERS, ORCHESTRATOR_SPOT } from "@/lib/scene/office-layout";
+import { TILE_SIZE, OFFICE_DIMENSIONS, getDeskAnchor, LAYERS, ORCHESTRATOR_SPOT } from "@/lib/scene/office-layout";
 import { STANDING_ADMIN } from "@/lib/scene/roster";
 import { getAssetUrl } from "@/lib/scene/assets";
 import { useDayNight } from "@/lib/scene/day-night";
@@ -50,10 +50,14 @@ export default function OfficeScene({
       const prev = bySeat.get(a.seatIndex);
       if (!prev || a.lastObservedAt >= prev.lastObservedAt) bySeat.set(a.seatIndex, a);
     }
-    return Array.from(bySeat.values());
+    return Array.from(bySeat.values()).sort((a, b) => a.seatIndex - b.seatIndex);
   }, [actors, activeFloor?.floorId]);
 
   const floorActors = seatedActors;
+  const visibleDeskEntries = useMemo(
+    () => floorActors.map((actor) => [actor.seatIndex, getDeskAnchor(actor.seatIndex)] as const),
+    [floorActors]
+  );
 
   const adminActors = useMemo(
     () => actors.filter((a) => a.floorId === activeFloor?.floorId && a.agentKey === STANDING_ADMIN),
@@ -211,8 +215,7 @@ export default function OfficeScene({
           position: "relative",
         }}
       >
-        {Object.entries(DESK_ANCHORS).map(([indexStr, desk]) => {
-          const index = parseInt(indexStr, 10);
+        {visibleDeskEntries.map(([index, desk]) => {
           const actorAtDesk = floorActors.find((a) => a.seatIndex === index);
           const isOccupied = !!actorAtDesk;
           const deskPose = actorAtDesk ? actorPose(activity, actorAtDesk.actorId) : "idle";
@@ -228,6 +231,7 @@ export default function OfficeScene({
           return (
             <div
               key={`desk-${index}`}
+              data-office-desk={actorAtDesk?.agentKey}
               className="absolute"
               style={{
                 left: desk.furnitureOrigin.x * scale,
@@ -375,12 +379,12 @@ export default function OfficeScene({
           );
         })}
 
-        {/* Decor strip below the third row (room is 384 tall now). */}
+        {/* Shared utility rail stays clear of all four desk columns. */}
         <div
           className="absolute"
           style={{
-            left: 16 * scale,
-            top: 304 * scale,
+            left: 336 * scale,
+            top: 288 * scale,
             width: 32 * scale,
             height: 64 * scale,
           }}
@@ -397,8 +401,8 @@ export default function OfficeScene({
         <div
           className="absolute"
           style={{
-            left: 64 * scale,
-            top: 320 * scale,
+            left: 320 * scale,
+            top: 64 * scale,
             width: 48 * scale,
             height: 32 * scale,
           }}
@@ -415,8 +419,8 @@ export default function OfficeScene({
         <div
           className="absolute"
           style={{
-            left: 128 * scale,
-            top: 328 * scale,
+            left: 344 * scale,
+            top: 224 * scale,
             width: 16 * scale,
             height: 24 * scale,
           }}
@@ -455,6 +459,7 @@ export default function OfficeScene({
               <div
                 className="absolute"
                 role="button"
+                data-office-actor={actor.actorId}
                 tabIndex={0}
                 aria-label={`${actor.displayName || actor.agentKey} inspector`}
                 onClick={() => onCubicleClick?.(actor)}
@@ -520,6 +525,7 @@ export default function OfficeScene({
               <div
                 className="absolute"
                 role="button"
+                data-office-actor={actor.actorId}
                 tabIndex={0}
                 aria-label={`${actor.displayName || actor.agentKey} inspector`}
                 onClick={() => onCubicleClick?.(actor)}
@@ -628,9 +634,9 @@ export default function OfficeScene({
       </svg>
 
       <div className="absolute inset-0 pointer-events-none" style={{ zIndex: LAYERS.foreground }}>
-        {Object.entries(DESK_ANCHORS).map(([indexStr, desk]) => (
+        {visibleDeskEntries.map(([index, desk]) => (
           <Image
-            key={`desk-front-${indexStr}`}
+            key={`desk-front-${index}`}
             src={getAssetUrl("furniture", "desk-front")}
             alt=""
             width={64}
@@ -669,8 +675,7 @@ export default function OfficeScene({
           className="absolute inset-0 pointer-events-none"
           style={{ zIndex: LAYERS.foreground + 2, opacity: isNight ? 1 : 0.35, transition: "opacity 900ms var(--ease-out)" }}
         >
-          {Object.entries(DESK_ANCHORS).map(([indexStr, desk]) => {
-            const index = parseInt(indexStr, 10);
+          {visibleDeskEntries.map(([index, desk]) => {
             const actorAtDesk = floorActors.find((a) => a.seatIndex === index);
             const deskPose = actorAtDesk ? actorPose(activity, actorAtDesk.actorId) : "idle";
             const isAwakeAtDesk = deskPose === "work" || deskPose === "success";

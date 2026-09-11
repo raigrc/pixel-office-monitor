@@ -968,7 +968,30 @@ Use captured or synthetic V2 events with explicit stable actor IDs and invocatio
 
 ## Phase 4 — Visual Identity & Polish
 
-**Status:** future, visual identity and polish.
+**Status:** active. Phase 4A implementation complete; visual approval pending. Later Phase 4 work remains paused.
+
+### Phase 4A - 2D office composition cleanup
+
+- Default floor seeding creates desks for `ai-systems`, `architect`, `automation-engineer`, `devops`, `documentation`, `project-manager`, `qa-engineer`, `researcher`, `security-reviewer`, `senior-engineer`, and `explore`.
+- `build`, `plan`, `general`, and `scout` remain supported optional roles. They receive their canonical desk only after an event observes them.
+- Future supported seated roles follow the same optional policy. Unknown runtime roles continue to share the visitor seat.
+- Canonical seat order puts all default roles first, so hiding optional roles leaves no gaps.
+- Sixteen possible seats use a compact four-column grid. `OfficeScene` renders only seats with actors while preserving orchestrator, utility fixtures, handoffs, selection, and inspection.
+- Existing viewport fit now measures its actual container instead of `100vw` and `100vh`. Desktop framing uses a smaller inset after sidebar collapse, which recenters and slightly enlarges the complete room without cropping it.
+- Unused viewport space uses a dark slate grid instead of extending beige office flooring beyond the room walls.
+
+Acceptance evidence:
+
+- [x] Fresh floor shows exactly 11 default desks; `build`, `plan`, `general`, and `scout` are absent.
+- [x] Explicit `build` activity adds seat 11 as twelfth desk without moving or leaving holes among default desks.
+- [x] Default rows use four columns and preserve three occupied positions in row three.
+- [x] Orchestrator remains at `{ x: 88, y: 44 }`.
+- [x] Requested delegation line remains aligned with recipient actor after reflow.
+- [x] Sidebar-close scale increases from `1.7917` to `1.875` at 1280x800; room remains centered and fully contained.
+- [x] 390x844 mobile view contains full room, shows dynamic optional desk, and has no horizontal overflow.
+- [x] `npm test` passes 38 files and 363 tests; TypeScript and isolated production build pass.
+- [x] Full lint reports 0 errors and unchanged 54-warning baseline.
+- [ ] User approves Phase 4A desktop and mobile composition.
 
 - Complete visual direction for 2D and 3D delegation, outcomes, standby, actor identity, and missing 3D clips or badges.
 - Align typography, color, lighting, materials, sprite assets, sound policy, and motion timing across both views.

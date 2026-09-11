@@ -2,8 +2,7 @@
 
 import { createContext, useContext, useEffect, useRef, useState, Suspense } from "react";
 import dynamic from "next/dynamic";
-import { OFFICE_DIMENSIONS, TILE_SIZE } from "@/lib/scene/office-layout";
-import { useDayNight } from "@/lib/scene/day-night";
+import { OFFICE_DIMENSIONS } from "@/lib/scene/office-layout";
 import type { WorldState } from "@/lib/world/world-types";
 import type { ActivityModel } from "@/lib/activity/activity-model";
 
@@ -18,22 +17,21 @@ interface SceneViewportProps {
   activity: ActivityModel;
   activeSessionId: string | null;
   onAgentClick: (actorId: string) => void;
+  sidebarOpen?: boolean;
 }
 
 const ThreeCanvas = dynamic(() => import("./ThreeCanvas"), { ssr: false });
 
 /**
  * SceneViewport — static whole-room camera with optional 3D view.
- * Fits the entire 384×256 office into the container (no pan, no zoom),
+ * Fits the entire 384×384 office into the container (no pan, no zoom),
  * centers it, and bleeds the office floor texture underneath so no
  * letterbox color ever shows.
  */
-export default function SceneViewport({ children, className, world, activity, activeSessionId, onAgentClick }: SceneViewportProps) {
+export default function SceneViewport({ children, className, world, activity, activeSessionId, onAgentClick, sidebarOpen = true }: SceneViewportProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [view, setView] = useState({ scale: 1, x: 0, y: 0 });
   const [viewMode, setViewMode] = useState<"2d" | "3d">("2d");
-  const dayNight = useDayNight();
-  const isNight = dayNight === "night";
 
   useEffect(() => {
     const el = containerRef.current;
@@ -41,9 +39,11 @@ export default function SceneViewport({ children, className, world, activity, ac
     const compute = () => {
       const rect = el.getBoundingClientRect();
       if (rect.width < 1 || rect.height < 1) return;
+      const desktop = window.matchMedia("(min-width: 1024px)").matches;
+      const inset = desktop ? (sidebarOpen ? 28 : 12) : 8;
       const s = Math.min(
-        rect.width / OFFICE_DIMENSIONS.width,
-        rect.height / OFFICE_DIMENSIONS.height
+        Math.max(1, rect.width - inset * 2) / OFFICE_DIMENSIONS.width,
+        Math.max(1, rect.height - inset * 2) / OFFICE_DIMENSIONS.height
       );
       setView({
         scale: s,
@@ -55,7 +55,7 @@ export default function SceneViewport({ children, className, world, activity, ac
     const ro = new ResizeObserver(compute);
     ro.observe(el);
     return () => ro.disconnect();
-  }, []);
+  }, [sidebarOpen]);
 
   const toggleViewMode = () => {
     setViewMode((prev) => (prev === "2d" ? "3d" : "2d"));
@@ -65,38 +65,37 @@ export default function SceneViewport({ children, className, world, activity, ac
     <div
       ref={containerRef}
       className={`relative overflow-hidden ${className ?? ""}`}
-      style={{ height: '100vh', width: '100vw' }}
+      style={{ height: "100%", width: "100%" }}
       role="img"
       aria-label="Office scene viewport"
     >
-      {/* Floor bleed — endless office floor behind/around the walled room */}
+      {/* Dark framing separates finite office walls from unused viewport space. */}
       <div
         aria-hidden="true"
         className="absolute inset-0"
         style={{
-          backgroundColor: isNight ? "#1E293B" : "#D8C8A7",
+          backgroundColor: "#0B1220",
           backgroundImage: [
-            "linear-gradient(rgba(99, 78, 48, 0.12) 1px, transparent 1px)",
-            "linear-gradient(90deg, rgba(99, 78, 48, 0.12) 1px, transparent 1px)",
-            "radial-gradient(circle at 5px 6px, rgba(255, 255, 255, 0.2) 0 1px, transparent 1px)",
+            "linear-gradient(rgba(71, 85, 105, 0.12) 1px, transparent 1px)",
+            "linear-gradient(90deg, rgba(71, 85, 105, 0.12) 1px, transparent 1px)",
           ].join(", "),
           backgroundRepeat: "repeat",
-          backgroundSize: `${TILE_SIZE}px ${TILE_SIZE}px`,
-          imageRendering: "pixelated",
-          transition: "background-color 900ms var(--ease-out)",
+          backgroundSize: "16px 16px",
         }}
       />
 
       {/* 2D Content */}
       <CameraZoomContext.Provider value={view.scale}>
         <div
+          data-office-frame="2d"
+          data-office-scale={view.scale}
           style={{
             transform: `translate(${view.x}px, ${view.y}px) scale(${view.scale})`,
             transformOrigin: "0 0",
             willChange: "transform",
             opacity: viewMode === "2d" ? 1 : 0,
             pointerEvents: viewMode === "2d" ? "auto" : "none",
-            transition: "opacity 300ms ease",
+            transition: "transform var(--dur-ui) var(--ease-in-out), opacity var(--dur-ui) var(--ease-out)",
           }}
         >
           {children}

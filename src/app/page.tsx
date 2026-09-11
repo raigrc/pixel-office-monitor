@@ -597,6 +597,7 @@ export default function Home() {
             world={world}
             activity={activity}
             activeSessionId={activeId}
+            sidebarOpen={isSidebarOpen}
             onAgentClick={(actorId) => {
               handleActorSelect(actorId);
             }}

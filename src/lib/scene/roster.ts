@@ -21,10 +21,31 @@ function normalizeKey(agentKey: string): string {
   return (agentKey ?? "").trim().toLowerCase();
 }
 
-/** The 15 seated agents, in canonical order = seat order 0–14. */
-export const ROSTER_KEYS: string[] = Object.keys(agents).filter(
+export const DEFAULT_VISIBLE_ROLE_KEYS = [
+  "ai-systems",
+  "architect",
+  "automation-engineer",
+  "devops",
+  "documentation",
+  "project-manager",
+  "qa-engineer",
+  "researcher",
+  "security-reviewer",
+  "senior-engineer",
+  "explore",
+] as const;
+
+const DEFAULT_VISIBLE_ROLE_SET = new Set<string>(DEFAULT_VISIBLE_ROLE_KEYS);
+const SUPPORTED_SEATED_KEYS = Object.keys(agents).filter(
   (k) => k !== "unknown" && k !== "intern" && !HIDDEN_KEYS.has(k) && k !== STANDING_ADMIN
 );
+
+export const OPTIONAL_ROLE_KEYS = SUPPORTED_SEATED_KEYS.filter(
+  (key) => !DEFAULT_VISIBLE_ROLE_SET.has(key)
+);
+
+/** Default desks come first; observed optional roles append without holes. */
+export const ROSTER_KEYS: string[] = [...DEFAULT_VISIBLE_ROLE_KEYS, ...OPTIONAL_ROLE_KEYS];
 
 export const ROSTER_SIZE = ROSTER_KEYS.length;
 
@@ -47,6 +68,10 @@ export function seatForAgent(agentKey: string): number {
 
 export function isHiddenKey(agentKey: string): boolean {
   return HIDDEN_KEYS.has(normalizeKey(agentKey));
+}
+
+export function isDefaultVisibleRole(agentKey: string): boolean {
+  return DEFAULT_VISIBLE_ROLE_SET.has(normalizeKey(agentKey));
 }
 
 export function isStandingAdmin(agentKey: string): boolean {

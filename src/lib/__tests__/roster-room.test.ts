@@ -2,7 +2,8 @@ import { describe, it, expect, beforeEach } from "vitest";
 import { upsert, _clearStore, getSnapshot, getState, closeFloor, prune } from "@/lib/monitor-store";
 import { getActorActivityPose, getActorBusyCount } from "@/lib/scene/actor-pose";
 import { ERROR_BEAT_MS, SUCCESS_BEAT_MS } from "@/lib/activity/activity-model";
-import { ROSTER_KEYS, ROSTER_SIZE, seatForAgent } from "@/lib/scene/roster";
+import { DEFAULT_VISIBLE_ROLE_KEYS, OPTIONAL_ROLE_KEYS, ROSTER_KEYS, ROSTER_SIZE, seatForAgent } from "@/lib/scene/roster";
+import { DESK_ANCHORS, getDeskAnchor } from "@/lib/scene/office-layout";
 import type { ActorInfo } from "@/lib/monitor-types";
 
 function v2Base(over: Record<string, unknown> = {}) {
@@ -45,27 +46,60 @@ function actor(id: string, key: string, activity?: "working" | "idle"): ActorInf
 describe("roster room", () => {
   beforeEach(() => _clearStore());
 
-  it("roster holds 15 fixed seats", () => {
+  it("keeps all supported roles while placing defaults before optional seats", () => {
     expect(ROSTER_SIZE).toBe(15);
     expect(ROSTER_KEYS).toHaveLength(15);
-    expect(seatForAgent("explore")).toBe(13);
+    expect(DEFAULT_VISIBLE_ROLE_KEYS).toEqual([
+      "ai-systems",
+      "architect",
+      "automation-engineer",
+      "devops",
+      "documentation",
+      "project-manager",
+      "qa-engineer",
+      "researcher",
+      "security-reviewer",
+      "senior-engineer",
+      "explore",
+    ]);
+    expect(OPTIONAL_ROLE_KEYS).toEqual(["build", "plan", "general", "scout"]);
+    expect(seatForAgent("explore")).toBe(10);
+    expect(seatForAgent("build")).toBe(11);
     expect(seatForAgent("orchestrator")).toBe(-1);
     expect(seatForAgent("system")).toBe(-1);
     expect(seatForAgent("title")).toBe(-1);
   });
 
-  it("first session event pre-occupies the floor with sleeping roster", () => {
+  it("first session event seeds only default sleeping roles", () => {
     upsert(v2Base({ eventId: "seed1", kind: "session.upsert", detail: {} }) as never);
     const snap = getSnapshot();
-    for (const key of ROSTER_KEYS) {
+    for (const key of DEFAULT_VISIBLE_ROLE_KEYS) {
       const a = snap.actors.find((x) => x.agentKey === key);
       expect(a, key).toBeDefined();
       expect(a?.activity).toBe("idle");
     }
     const seats = snap.actors.filter((a) => a.role === "specialist").map((a) => a.seatIndex);
-    expect(new Set(seats).size).toBe(ROSTER_SIZE);
+    expect(seats).toEqual(DEFAULT_VISIBLE_ROLE_KEYS.map((_, index) => index));
+    expect(OPTIONAL_ROLE_KEYS.every((key) => !snap.actors.some((actor) => actor.agentKey === key))).toBe(true);
     // Orchestrator stands: no actor until it reports.
     expect(snap.actors.some((a) => a.agentKey === "orchestrator")).toBe(false);
+  });
+
+  it("adds an optional role at the next desk only after observation", () => {
+    upsert(v2Base({ eventId: "optional-seed", kind: "session.upsert", detail: {} }) as never);
+    expect(getSnapshot().actors.some((actor) => actor.agentKey === "build")).toBe(false);
+
+    upsert(v2Base({ eventId: "optional-build", kind: "actor.activity", detail: { agentKey: "build", activity: "working" } }) as never);
+    const build = getSnapshot().actors.find((actor) => actor.agentKey === "build");
+    expect(build).toMatchObject({ activity: "working", seatIndex: DEFAULT_VISIBLE_ROLE_KEYS.length });
+  });
+
+  it("lays contiguous seats into four compact columns", () => {
+    const defaults = DEFAULT_VISIBLE_ROLE_KEYS.map((key) => getDeskAnchor(seatForAgent(key)));
+    expect(new Set(defaults.slice(0, 4).map((desk) => desk.furnitureOrigin.x)).size).toBe(4);
+    expect(defaults[4].furnitureOrigin.x).toBe(defaults[0].furnitureOrigin.x);
+    expect(defaults[10].furnitureOrigin).toEqual({ x: 168, y: 192 });
+    expect(Object.keys(DESK_ANCHORS)).toHaveLength(16);
   });
 
   it("repeat calls from another session land on the SAME cubicle", () => {
@@ -173,8 +207,8 @@ describe("roster room", () => {
     upsert(v2Base({ eventId: "n2", kind: "actor.activity", detail: { agentKey: "title", activity: "working" } }) as never);
     const snap = getSnapshot();
     expect(snap.actors.find((a) => a.agentKey === "future-bot")?.seatIndex).toBe(ROSTER_SIZE);
-    // Scout keeps its corner even with a guest around.
-    expect(snap.actors.find((a) => a.agentKey === "scout")?.seatIndex).toBe(ROSTER_SIZE - 1);
+    expect(snap.actors.some((a) => a.agentKey === "scout")).toBe(false);
+    expect(seatForAgent("scout")).toBe(ROSTER_SIZE - 1);
     expect(snap.actors.find((a) => a.agentKey === "title")?.role).toBe("system");
   });
 

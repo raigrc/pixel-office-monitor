@@ -19,7 +19,7 @@ import {
   type CubicleLegacy,
 } from "./monitor-types";
 import { isSupabaseEnabled } from "./supabase";
-import { seatForAgent, ROSTER_KEYS, STANDING_ADMIN } from "./scene/roster";
+import { DEFAULT_VISIBLE_ROLE_KEYS, OPTIONAL_ROLE_KEYS, seatForAgent } from "./scene/roster";
 
 export type CubicleDTO = CubicleLegacy;
 
@@ -143,7 +143,7 @@ const seededFloors = new Set<string>();
  * Seed-schema epoch. Bump when seeding/remap rules change so live floors
  * reheal on their next event instead of drifting forever.
  */
-const ROSTER_EPOCH = 2;
+const ROSTER_EPOCH = 3;
 const floorSeedEpoch = new Map<string, number>();
 
 function seatRoleFor(agentKey: string): ActorInfo["role"] {
@@ -179,9 +179,8 @@ function ensureActor(runtime: RuntimeState, actorId: string, floorId: string, se
 }
 
 /**
- * Pre-occupy a fresh floor: every roster agent gets a sleeping desk (lamp
- * off, monitor off) the moment a session is detected — never an empty room.
- * Backfills live floors missing keys and remaps drifted seats to fixed ones.
+ * Pre-occupy a fresh floor with default roles. Optional roles get a desk only
+ * after real activity names them. Backfills defaults and remaps fixed seats.
  */
 function seedFloorRoster(
   runtime: RuntimeState,
@@ -190,13 +189,25 @@ function seedFloorRoster(
   rootSessionId: string,
   now: number
 ): void {
+  const optionalRoles = new Set(OPTIONAL_ROLE_KEYS);
+  for (const [actorId, actor] of runtime.actors) {
+    if (actor.floorId !== floor.floorId || !optionalRoles.has(actor.agentKey)) continue;
+    const wasOnlySeeded = actor.activity === "idle"
+      && actor.createdAt === actor.lastObservedAt
+      && actor.idleSince === actor.createdAt
+      && !Array.from(runtime.invocations.values()).some(
+        (invocation) => invocation.senderActorId === actorId || invocation.recipientActorId === actorId
+      );
+    if (wasOnlySeeded) runtime.actors.delete(actorId);
+  }
+
   // Remap every desk actor to its fixed seat (heals pre-roster dynamic
   // seats live; unknowns share the intern corner).
   for (const actor of runtime.actors.values()) {
     if (actor.floorId !== floor.floorId || actor.role === "system") continue;
     actor.seatIndex = seatForAgent(actor.agentKey);
   }
-  for (const key of ROSTER_KEYS) {
+  for (const key of DEFAULT_VISIBLE_ROLE_KEYS) {
     const existing = floorActorByKey(runtime, floor.floorId, key);
     if (existing) {
       continue;
@@ -208,7 +219,7 @@ function seedFloorRoster(
       sessionId: rootSessionId,
       agentKey: key,
       displayName: key,
-      role: key === STANDING_ADMIN ? "orchestrator" : "specialist",
+      role: "specialist",
       seatIndex: seatForAgent(key),
       lastObservedAt: now,
       createdAt: now,
@@ -604,7 +615,7 @@ function upsertV2(
   // Parent linkage arrived late: fold the orphaned self-root floor in.
   healGhostFloor(runtime, store, deriveFloorId(projectId, rootSessionId), floor);
 
-  // Pre-occupy the floor on first sight: full sleeping roster, no empty room.
+  // Pre-occupy the floor with default sleeping roles, never optional fillers.
   // Re-runs when the seed epoch bumps (live floors reheal instead of drift).
   if (floorSeedEpoch.get(floorId) !== ROSTER_EPOCH) {
     seedFloorRoster(runtime, floor, projectId, resolvedRoot, now);
