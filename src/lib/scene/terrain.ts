@@ -53,61 +53,62 @@ const PLANET_PRESETS: Record<PlanetPreset, {
   },
 };
 
-function mulberry32(seed: number): () => number {
-  let t = seed >>> 0;
-  return () => {
-    t += 0x6D2B79F5;
-    let r = Math.imul(t ^ (t >>> 15), 1 | t);
-    r ^= r + Math.imul(r ^ (r >>> 7), 61 | r);
-    return ((r ^ (r >>> 14)) >>> 0) / 4294967296;
-  };
+const PRESET_SEEDS: Record<PlanetPreset, number> = {
+  luna: 0x1a2b3c4d,
+  mars: 0x5e6f7a8b,
+  terra: 0x9c0d1e2f,
+};
+
+/** Terrain relief half-range. Deck slabs sit above this. */
+export const TERRAIN_HALF_RANGE = 0.45;
+
+/** Pure hash of an integer lattice point. No sequential state. */
+function hashLattice(ix: number, iz: number, seed: number): number {
+  let h = Math.imul(ix, 374761393) + Math.imul(iz, 668265263) + seed;
+  h = Math.imul(h ^ (h >>> 13), 1274126177);
+  h ^= h >>> 16;
+  return (h >>> 0) / 4294967296;
 }
 
-function fbm(rand: () => number, x: number, z: number, octaves: number, persistence: number, scale: number): number {
+function latticeNoise(x: number, z: number, seed: number): number {
+  const ix = Math.floor(x);
+  const iz = Math.floor(z);
+  const fx = x - ix;
+  const fz = z - iz;
+  const u = fx * fx * (3 - 2 * fx);
+  const v = fz * fz * (3 - 2 * fz);
+  const v1 = hashLattice(ix, iz, seed) * 2 - 1;
+  const v2 = hashLattice(ix + 1, iz, seed) * 2 - 1;
+  const v3 = hashLattice(ix, iz + 1, seed) * 2 - 1;
+  const v4 = hashLattice(ix + 1, iz + 1, seed) * 2 - 1;
+  const n1 = v1 + u * (v2 - v1);
+  const n2 = v3 + u * (v4 - v3);
+  return n1 + v * (n2 - n1);
+}
+
+/**
+ * Terrain height at any world point. Pure function of coordinates,
+ * so placements can resample the exact surface the mesh shows.
+ */
+export function heightAt(x: number, z: number, preset: PlanetPreset): number {
+  const planet = PLANET_PRESETS[preset];
+  const seed = PRESET_SEEDS[preset];
   let value = 0;
   let amplitude = 1;
-  let frequency = scale;
+  let frequency = planet.noiseScale;
   let maxValue = 0;
-
-  for (let i = 0; i < octaves; i++) {
-    const nx = x * frequency;
-    const nz = z * frequency;
-    const ix = Math.floor(nx);
-    const iz = Math.floor(nz);
-    const fx = nx - ix;
-    const fz = nz - iz;
-
-    const rand1 = () => rand();
-    const rand2 = () => rand();
-    const rand3 = () => rand();
-    const rand4 = () => rand();
-
-    const v1 = rand1() * 2 - 1;
-    const v2 = rand2() * 2 - 1;
-    const v3 = rand3() * 2 - 1;
-    const v4 = rand4() * 2 - 1;
-
-    const u = fx * fx * (3 - 2 * fx);
-    const v = fz * fz * (3 - 2 * fz);
-
-    const n1 = v1 + u * (v2 - v1);
-    const n2 = v3 + u * (v4 - v3);
-    const noise = n1 + v * (n2 - n1);
-
-    value += noise * amplitude;
+  for (let i = 0; i < planet.noiseOctaves; i++) {
+    value += latticeNoise(x * frequency, z * frequency, seed + i * 0x9e3779b9) * amplitude;
     maxValue += amplitude;
-    amplitude *= persistence;
+    amplitude *= planet.noisePersistence;
     frequency *= 2;
   }
-
-  return value / maxValue;
+  return (value / maxValue) * TERRAIN_HALF_RANGE;
 }
 
 export function createTerrainGeometry(config: TerrainConfig): THREE.BufferGeometry {
   const { preset, halfExtent, resolution } = config;
   const planet = PLANET_PRESETS[preset];
-
-  const rand = mulberry32(preset === 'luna' ? 0x1A2B3C4D : preset === 'mars' ? 0x5E6F7A8B : 0x9C0D1E2F);
 
   const vertices: number[] = [];
   const indices: number[] = [];
@@ -121,21 +122,14 @@ export function createTerrainGeometry(config: TerrainConfig): THREE.BufferGeomet
     for (let gx = 0; gx <= resolution; gx++) {
       const x = -halfExtent + gx * step;
 
-      const noise = fbm(rand, x, z, planet.noiseOctaves, planet.noisePersistence, planet.noiseScale);
-      const y = noise * 2;
-
+      const y = heightAt(x, z, preset);
       vertices.push(x, y, z);
 
-      let color = planet.colors[0];
-      for (let i = 0; i < planet.heights.length - 1; i++) {
-        if (y >= planet.heights[i] && y < planet.heights[i + 1]) {
-          const t = (y - planet.heights[i]) / (planet.heights[i + 1] - planet.heights[i]);
-          color = planet.colors[i].clone().lerp(planet.colors[i + 1], t);
-          break;
-        } else if (y >= planet.heights[planet.heights.length - 1]) {
-          color = planet.colors[planet.colors.length - 1];
-        }
-      }
+      // Normalized elevation picks the color band. Bands stay even
+      // across presets so relief reads the same on every planet.
+      const t = (y + TERRAIN_HALF_RANGE) / (TERRAIN_HALF_RANGE * 2);
+      const band = t < 0.25 ? 0 : t < 0.55 ? 1 : t < 0.8 ? 2 : 3;
+      const color = planet.colors[band];
       colors.push(color.r, color.g, color.b);
 
       normals.push(0, 1, 0);

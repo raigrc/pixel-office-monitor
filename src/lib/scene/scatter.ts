@@ -1,10 +1,11 @@
 import * as THREE from 'three';
-import { hexToWorld, hexToKey, HexCell } from './hex-grid';
+import { hexToKey, worldToHex, HexCell } from './hex-grid';
+import { heightAt, type PlanetPreset } from './terrain';
 
 export interface ScatterConfig {
   halfExtent: number;
   density: number;
-  planetPreset: 'luna' | 'mars' | 'terra';
+  planetPreset: PlanetPreset;
 }
 
 const SCATTER_PRESETS: Record<'luna' | 'mars' | 'terra', {
@@ -114,7 +115,6 @@ export function createScatterMesh(
     geometries.push(getGeometry(model));
   }
 
-  const dummy = new THREE.Object3D();
   const positions: THREE.Vector3[] = [];
   const scales: number[] = [];
   const geometryIndices: number[] = [];
@@ -132,7 +132,7 @@ export function createScatterMesh(
       if (distToShip < shipRadius) continue;
 
       const worldPos = new THREE.Vector3(x, 0, z);
-      const hex = { q: Math.round(x / 2.6), r: Math.round(z / 2.6) };
+      const hex = worldToHex(x, z);
       const hexKey = hexToKey(hex.q, hex.r);
       if (occupiedCells.has(hexKey)) continue;
 
@@ -140,6 +140,8 @@ export function createScatterMesh(
 
       const modelIdx = Math.floor(rand() * preset.models.length);
       const scale = preset.scaleRange[0] + rand() * (preset.scaleRange[1] - preset.scaleRange[0]);
+      // Sit on the terrain surface instead of the y=0 plane.
+      worldPos.y = heightAt(x, z, planetPreset) - 0.08;
 
       positions.push(worldPos);
       scales.push(scale);
@@ -154,7 +156,6 @@ export function createScatterMesh(
 
   const mergedGeometry = new THREE.BufferGeometry();
   const mergedAttributes: Map<string, number[]> = new Map();
-  let vertexCount = 0;
 
   for (let i = 0; i < totalCount; i++) {
     const geo = geometries[geometryIndices[i]];
@@ -178,7 +179,6 @@ export function createScatterMesh(
         mergedAttributes.get('normal')!.push(nx, ny, nz);
       }
     }
-    vertexCount += pos.count;
   }
 
   for (const [name, array] of mergedAttributes) {
@@ -187,8 +187,14 @@ export function createScatterMesh(
 
   mergedGeometry.computeBoundingSphere();
 
+  const SCATTER_TINTS = {
+    luna: 0x9aa0ae,
+    mars: 0xa06844,
+    terra: 0x6b7a5e,
+  } as const;
+
   const material = new THREE.MeshStandardMaterial({
-    color: 0x3a3a3a,
+    color: SCATTER_TINTS[planetPreset],
     roughness: 0.9,
     metalness: 0.05,
   });

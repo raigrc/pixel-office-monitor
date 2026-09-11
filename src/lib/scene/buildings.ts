@@ -165,7 +165,11 @@ export const BUILDING_RECIPES: BuildingRecipe[] = [
 const MATERIAL_COUNT = 10;
 
 function pickRecipe(rand: () => number): BuildingRecipe {
-  return BUILDING_RECIPES[Math.floor(rand() * BUILDING_RECIPES.length)];
+  // Plots always read built. The flat pad stays reserved for the
+  // origin apron, never for a floor roll.
+  const raised = BUILDING_RECIPES.filter((r) => r.height >= 1.5);
+  const pool = raised.length > 0 ? raised : BUILDING_RECIPES;
+  return pool[Math.floor(rand() * pool.length)];
 }
 
 export function createBuildingGeometry(floorId: string): { geometry: THREE.BufferGeometry; recipe: BuildingRecipe; materials: number[] } {
