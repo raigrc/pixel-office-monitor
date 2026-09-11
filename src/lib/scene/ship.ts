@@ -5,12 +5,24 @@ export interface ShipConfig {
   scale: number;
 }
 
+export interface ShipTransit {
+  rampBottom: THREE.Vector3;
+  rampTop: THREE.Vector3;
+  airlock: THREE.Vector3;
+}
+
 export class Ship {
   private hullMesh!: THREE.Mesh;
   private engineMesh!: THREE.Mesh;
   private airlockMesh!: THREE.Mesh;
   private rampMesh!: THREE.Mesh;
   private group!: THREE.Group;
+  private airlockAnchor!: THREE.Object3D;
+  private rampTopAnchor!: THREE.Object3D;
+  private rampBottomAnchor!: THREE.Object3D;
+  /** Shared beacon geometry/material. Owned here, disposed exactly once. */
+  private lightGeometry: THREE.BufferGeometry | null = null;
+  private lightMaterial: THREE.Material | null = null;
 
   private config: ShipConfig;
 
@@ -53,7 +65,6 @@ export class Ship {
     this.group.add(this.engineMesh);
 
     const airlockGeo = new THREE.CylinderGeometry(1.5, 1.5, 3, 12, 1, true);
-    airlockGeo.translate(0, 1.5, -9);
     airlockGeo.rotateX(Math.PI / 2);
 
     const airlockMat = new THREE.MeshStandardMaterial({
@@ -63,12 +74,11 @@ export class Ship {
       side: THREE.DoubleSide,
     });
     this.airlockMesh = new THREE.Mesh(airlockGeo, airlockMat);
+    this.airlockMesh.position.set(0, 2.5, 9);
     this.airlockMesh.castShadow = true;
     this.group.add(this.airlockMesh);
 
     const rampGeo = new THREE.BoxGeometry(3, 0.2, 12);
-    rampGeo.translate(0, 0.1, -15);
-    rampGeo.rotateX(-0.25);
 
     const rampMat = new THREE.MeshStandardMaterial({
       color: 0x555555,
@@ -76,11 +86,23 @@ export class Ship {
       metalness: 0.3,
     });
     this.rampMesh = new THREE.Mesh(rampGeo, rampMat);
+    this.rampMesh.position.set(0, 1.5, 15);
+    this.rampMesh.rotation.x = 0.25;
     this.rampMesh.receiveShadow = true;
     this.group.add(this.rampMesh);
 
+    this.airlockAnchor = new THREE.Object3D();
+    this.airlockAnchor.position.set(0, 2.5, 8.5);
+    this.rampTopAnchor = new THREE.Object3D();
+    this.rampTopAnchor.position.set(0, 3, 9);
+    this.rampBottomAnchor = new THREE.Object3D();
+    this.rampBottomAnchor.position.set(0, 0, 21);
+    this.group.add(this.airlockAnchor, this.rampTopAnchor, this.rampBottomAnchor);
+
     const lightGeo = new THREE.SphereGeometry(0.3, 8, 6);
     const lightMat = new THREE.MeshBasicMaterial({ color: 0x00ff88 });
+    this.lightGeometry = lightGeo;
+    this.lightMaterial = lightMat;
 
     const light1 = new THREE.Mesh(lightGeo, lightMat);
     light1.position.set(-3, 4, -5);
@@ -96,24 +118,24 @@ export class Ship {
   }
 
   getRampTop(): THREE.Vector3 {
-    const worldPos = new THREE.Vector3();
-    this.rampMesh.getWorldPosition(worldPos);
-    worldPos.y += 0.2;
-    return worldPos;
+    return this.getTransit().rampTop;
   }
 
   getRampBottom(): THREE.Vector3 {
-    const worldPos = new THREE.Vector3();
-    this.rampMesh.getWorldPosition(worldPos);
-    worldPos.z += 12 * Math.cos(0.25) * this.config.scale;
-    worldPos.y = 0;
-    return worldPos;
+    return this.getTransit().rampBottom;
   }
 
   getAirlockPosition(): THREE.Vector3 {
-    const worldPos = new THREE.Vector3();
-    this.airlockMesh.getWorldPosition(worldPos);
-    return worldPos;
+    return this.getTransit().airlock;
+  }
+
+  getTransit(): ShipTransit {
+    this.group.updateWorldMatrix(true, true);
+    return {
+      airlock: this.airlockAnchor.getWorldPosition(new THREE.Vector3()),
+      rampTop: this.rampTopAnchor.getWorldPosition(new THREE.Vector3()),
+      rampBottom: this.rampBottomAnchor.getWorldPosition(new THREE.Vector3()),
+    };
   }
 
   dispose(): void {
@@ -141,6 +163,11 @@ export class Ship {
     } else {
       this.rampMesh.material.dispose();
     }
+    // Beacon assets are shared by both lights: dispose once here.
+    this.lightGeometry?.dispose();
+    this.lightMaterial?.dispose();
+    this.lightGeometry = null;
+    this.lightMaterial = null;
   }
 }
 

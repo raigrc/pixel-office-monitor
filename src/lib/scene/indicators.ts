@@ -55,8 +55,7 @@ function createBadgeAtlas(): THREE.CanvasTexture {
   return texture;
 }
 
-const BADGE_VERTEX_SHADER = `
-  attribute vec3 instancePosition;
+export const BADGE_VERTEX_SHADER = `
   attribute float aBadge;
   attribute vec3 aTint;
 
@@ -73,7 +72,14 @@ const BADGE_VERTEX_SHADER = `
 
     vec3 pos = position;
     pos.xy *= uBadgeSize;
-    vec4 worldPos = modelMatrix * vec4(pos, 1.0);
+    // Badge quads are positioned by updateView() via the per-instance
+    // matrix. Apply it exactly once so badges track their agent instead
+    // of stacking at the mesh origin.
+    mat4 instanceTransform = mat4(1.0);
+    #ifdef USE_INSTANCING
+      instanceTransform = instanceMatrix;
+    #endif
+    vec4 worldPos = modelMatrix * instanceTransform * vec4(pos, 1.0);
     gl_Position = projectionMatrix * viewMatrix * worldPos;
   }
 `;
@@ -145,6 +151,7 @@ export class Badges {
     const geometry = new THREE.PlaneGeometry(1, 1);
 
     const mesh = new THREE.InstancedMesh(geometry, this.material, this.maxAgents);
+    mesh.count = 0;
     mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
 
     const badgeArray = new THREE.InstancedBufferAttribute(new Float32Array(this.maxAgents), 1);
@@ -171,6 +178,7 @@ export class Badges {
     entry.pos.y += 2.2;
 
     this.writeInstance(entry, badgeIndex, color);
+    this.mesh.count = this.agentBadges.size;
   }
 
   /** Faces every badge at the camera. Call once per frame after setBadge. */
@@ -217,7 +225,7 @@ export class Badges {
 
   private rebuildIndices(): void {
     let index = 0;
-    for (const [agentId, entry] of this.agentBadges) {
+    for (const entry of this.agentBadges.values()) {
       if (entry.index !== index) {
         const badgeArray = this.mesh.geometry.getAttribute('aBadge') as THREE.InstancedBufferAttribute;
         const colorArray = this.mesh.geometry.getAttribute('aTint') as THREE.InstancedBufferAttribute;
@@ -228,11 +236,23 @@ export class Badges {
           colorArray.getY(entry.index),
           colorArray.getZ(entry.index)
         );
+        badgeArray.needsUpdate = true;
+        colorArray.needsUpdate = true;
 
         entry.index = index;
       }
+      // Refresh the matrix at the compacted slot. updateView() rewrites
+      // these every frame, but a removal between frames must not leave a
+      // stale matrix visible for even one render.
+      this.dummy.position.copy(entry.pos);
+      this.dummy.quaternion.identity();
+      this.dummy.scale.setScalar(1);
+      this.dummy.updateMatrix();
+      this.mesh.setMatrixAt(index, this.dummy.matrix);
       index++;
     }
+    this.mesh.count = index;
+    this.mesh.instanceMatrix.needsUpdate = true;
   }
 
   private badgeTypeToIndex(type: BadgeType): number {

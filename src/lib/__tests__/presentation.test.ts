@@ -11,6 +11,7 @@ const floor: FloorInfo = {
   createdAt: 1,
   updatedAt: 1,
   closed: false,
+  closedAt: null,
   sessionId: "root",
 };
 
@@ -72,8 +73,7 @@ describe("PresentationController", () => {
     let actors = [sender, recipient];
     const controller = new PresentationController(
       () => actors,
-      () => [floor],
-      () => [makeInvocation()]
+      () => [floor]
     );
     controller.enqueueHandoff(makeInvocation(), sender, recipient);
 

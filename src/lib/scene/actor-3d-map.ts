@@ -1,7 +1,7 @@
 import * as THREE from 'three';
-import type { ActorInfo, FloorInfo, InvocationInfo } from '../monitor-types';
+import type { ActorInfo, InvocationInfo } from '../monitor-types';
 import { getActorActivityPose } from './actor-pose';
-import { allocateCells, hexToWorld, DECK_TOP, type HexCell } from './hex-grid';
+import { DECK_TOP } from './hex-grid';
 import type { AstronautState } from './astronauts';
 
 export type ActivityPose3D = 'work' | 'seat' | 'success' | 'idle';
@@ -22,28 +22,6 @@ export function suitColorFor(agentKey: string): THREE.Color {
   let hash = 0;
   for (let i = 0; i < agentKey.length; i++) hash = (hash * 31 + agentKey.charCodeAt(i)) >>> 0;
   return new THREE.Color().setHSL((hash % 360) / 360, 0.7, 0.55);
-}
-
-/**
- * One hex cell per floor, sticky across snapshots when previous cells
- * pass through. Mirrors the engine allocation inputs so both agree.
- */
-export function layoutFloorPositions(
-  floors: FloorInfo[],
-  previous: Map<string, HexCell> | null
-): Map<string, THREE.Vector3> {
-  const out = new Map<string, THREE.Vector3>();
-  if (floors.length === 0) return out;
-  const { cells } = allocateCells(
-    floors.map((f, i) => ({ id: f.floorId, priority: floors.length - i, cellCount: 1 })),
-    previous
-  );
-  for (const cell of cells.values()) {
-    if (cell.projectId && !out.has(cell.projectId)) {
-      out.set(cell.projectId, hexToWorld(cell.q, cell.r));
-    }
-  }
-  return out;
 }
 
 /**

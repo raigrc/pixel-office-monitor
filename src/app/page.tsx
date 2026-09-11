@@ -1,19 +1,26 @@
 "use client";
 /* eslint-disable react-hooks/set-state-in-effect -- intentional sync from SWR/store + localStorage hydration */
 
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import Header from "@/components/Header";
 import FloorSwitcher from "@/components/FloorSwitcher";
+import MultiSessionCompare from "@/components/MultiSessionCompare";
+import NotificationCenter from "@/components/NotificationCenter";
 import ErrorBoundary from "@/components/ErrorBoundary";
 import AgentInspector from "@/components/AgentInspector";
 import OfficeScene from "@/components/scene/OfficeScene";
 import SceneViewport from "@/components/scene/SceneViewport";
 import { useMonitorState } from "@/hooks/useMonitorStream";
+import { monitorToWorld } from "@/lib/world/monitor-to-world";
+import { monitorToActivity } from "@/lib/activity/monitor-to-activity";
+import type { ActivityModel } from "@/lib/activity/activity-model";
 import { PresentationController } from "@/lib/scene/presentation";
-import type { VisualHandoffState } from "@/lib/scene/presentation";
-import { AWAKE_WINDOW_MS } from "@/lib/scene/actor-pose";
+import type { VisualActorPoseState, VisualHandoffState } from "@/lib/scene/presentation";
 import type { FloorDTO, CubicleDTO, SnapshotEnvelope } from "@/lib/monitor-store";
+import { buildMultiSessionModel, chooseFollowTarget } from "@/lib/multi-session/multi-session-model";
+import { transitionSessionNotifications, type SessionNotificationState } from "@/lib/multi-session/session-notifications";
+import { closeFloor as requestFloorClose, renameFloor as requestFloorRename } from "@/lib/client/monitor-api";
 
 function redactPathsInPrompt(prompt: string): string {
   let out = prompt.replace(/(?:\/[\w.\-]+)+(?:\/)?/g, "[…]");
@@ -24,7 +31,8 @@ function redactPathsInPrompt(prompt: string): string {
 function convertV2ToLegacy(
   floors: SnapshotEnvelope["floors"],
   actors: SnapshotEnvelope["actors"],
-  invocations: SnapshotEnvelope["invocations"]
+  invocations: SnapshotEnvelope["invocations"],
+  activity: ActivityModel,
 ): FloorDTO[] {
   return floors.filter((floor) => !floor.closed).map((floor) => {
     // System actors (session-level signals) stay out of desks, lists, and counts.
@@ -32,40 +40,33 @@ function convertV2ToLegacy(
       (a: SnapshotEnvelope["actors"][0]) => a.floorId === floor.floorId && a.role !== "system"
     );
     const cubicles: CubicleDTO[] = floorActors.map((actor: SnapshotEnvelope["actors"][0]) => {
-      const activeInv = invocations.find(
-        (inv: SnapshotEnvelope["invocations"][0]) =>
-          (inv.senderActorId === actor.actorId || inv.recipientActorId === actor.actorId) &&
-          (inv.executionStatus === "requested" || inv.executionStatus === "started")
-      );
-      // Just-finished success beat: monitor stays ON (celebrating) briefly.
-      const lastFinish = invocations
+      const activeInv = invocations
         .filter(
           (inv: SnapshotEnvelope["invocations"][0]) =>
             (inv.senderActorId === actor.actorId || inv.recipientActorId === actor.actorId) &&
-            inv.finishedAt != null &&
-            (inv.outcome === "succeeded" || inv.outcome === "unknown")
+            (inv.executionStatus === "requested" || inv.executionStatus === "started")
         )
-        .reduce<number | null>(
-          (m, inv) => (inv.finishedAt != null && (m == null || inv.finishedAt > m) ? inv.finishedAt : m),
-          null
-        );
-      const justFinished = lastFinish != null && Date.now() - lastFinish < AWAKE_WINDOW_MS;
+        .sort((a, b) => (b.startedAt ?? b.requestedAt ?? 0) - (a.startedAt ?? a.requestedAt ?? 0))[0];
+      const semanticPose = activity.actors.find((entry) => entry.actor.actorId === actor.actorId)?.pose ?? "idle";
       const state = activeInv
         ? actor.agentKey === "orchestrator"
           ? activeInv.senderActorId === actor.actorId
             ? "delegating"
             : "thinking"
           : "working"
-        : justFinished
+        : semanticPose === "success"
           ? "celebrating"
-          : "idle";
+          : semanticPose === "error"
+            ? "blocked"
+          : semanticPose === "work" ? "working" : "idle";
 
       return {
         agent: actor.agentKey,
         kind: "agent.status",
         status: state === "idle" ? "idle" : "working",
         since: actor.lastObservedAt,
-        prompt: undefined,
+        taskCategory: activeInv?.taskCategory ?? undefined,
+        prompt: activeInv?.promptPreview ?? undefined,
         todos: [],
         state,
         lastStateChange: actor.lastObservedAt,
@@ -122,9 +123,14 @@ export default function Home() {
 
   const channelRef = useRef<BroadcastChannel | null>(null);
 
-  const [promoteToast, setPromoteToast] = useState<{ floor: FloorDTO; timeout: NodeJS.Timeout } | null>(null);
-
-  const [selectedCubicle, setSelectedCubicle] = useState<CubicleDTO | null>(null);
+  const [selectedActorId, setSelectedActorId] = useState<string | null>(null);
+  const [comparisonIds, setComparisonIds] = useState<string[]>([]);
+  const [notificationCenterOpen, setNotificationCenterOpen] = useState(false);
+  const [notificationState, setNotificationState] = useState<SessionNotificationState | null>(null);
+  const [unreadNotificationIds, setUnreadNotificationIds] = useState<Set<string>>(new Set());
+  const [commandMessage, setCommandMessage] = useState<string | null>(null);
+  const notificationStateRef = useRef<SessionNotificationState | null>(null);
+  const inspectorTriggerRef = useRef<HTMLElement | null>(null);
 
   // Data-freshness clock: "live" socket means nothing if no events arrive
   // (e.g. broken/dead plugin). Re-evaluate every 5s.
@@ -143,13 +149,10 @@ export default function Home() {
         ? "quiet"
         : sseStatus;
 
-  const latestActorsRef = useRef(v2Actors);
-  const latestFloorsRef = useRef(v2Floors);
-  const latestInvocationsRef = useRef(v2Invocations);
   const presentationControllerRef = useRef<PresentationController | null>(null);
-  const enqueuedInvocationIdsRef = useRef<Set<string>>(new Set());
   const hasHandoffStatesRef = useRef(false);
   const [handoffStates, setHandoffStates] = useState<VisualHandoffState[]>([]);
+  const [actorPoseStates, setActorPoseStates] = useState<VisualActorPoseState[]>([]);
 
   const syncSettingsFromStorage = useCallback(() => {
     try {
@@ -245,7 +248,33 @@ export default function Home() {
     };
   }, []);
 
-  const floors = useMemo(() => convertV2ToLegacy(v2Floors, v2Actors, v2Invocations), [v2Floors, v2Actors, v2Invocations]);
+  const activity = useMemo(
+    () => monitorToActivity({ floors: v2Floors, actors: v2Actors, invocations: v2Invocations }, nowTick),
+    [v2Floors, v2Actors, v2Invocations, nowTick]
+  );
+  const sessionModel = useMemo(
+    () => buildMultiSessionModel({
+      floors: v2Floors,
+      actors: v2Actors,
+      invocations: v2Invocations,
+      activity,
+      pinnedFloorIds: pinnedFloors,
+    }),
+    [v2Floors, v2Actors, v2Invocations, activity, pinnedFloors],
+  );
+  const openSessionFloors = useMemo(
+    () => [...sessionModel.working, ...sessionModel.quiet],
+    [sessionModel],
+  );
+  const floors = useMemo(
+    () => convertV2ToLegacy(v2Floors, v2Actors, v2Invocations, activity),
+    [v2Floors, v2Actors, v2Invocations, activity]
+  );
+
+  const world = useMemo(
+    () => monitorToWorld({ floors: v2Floors, actors: v2Actors, invocations: v2Invocations }, nowTick),
+    [v2Floors, v2Actors, v2Invocations, nowTick]
+  );
 
   const displayedFloors = useMemo(() => {
     if (!settingsHydrated) return floors;
@@ -267,16 +296,14 @@ export default function Home() {
     return floors;
   }, [floors, showPromptPreview, redactPaths, settingsHydrated]);
 
-  const suggestedActiveId = useMemo(() => {
-    if (!displayedFloors.length) return null;
-    const busy = displayedFloors.find((f) => f.status === "working");
-    return (busy ?? displayedFloors[0]).sessionID;
-  }, [displayedFloors]);
+  const suggestedActiveId = chooseFollowTarget(sessionModel, activeId)
+    ?? openSessionFloors[0]?.floorId
+    ?? null;
 
   useEffect(() => {
     if (!pinnedHydrated || !activeHydrated) return;
 
-    if (!displayedFloors.length) {
+    if (!openSessionFloors.length) {
       if (activeId !== null) setActiveId(null);
       return;
     }
@@ -284,19 +311,16 @@ export default function Home() {
       setActiveId(suggestedActiveId);
       return;
     }
-    const exists = displayedFloors.some((f) => f.sessionID === activeId);
+    const exists = openSessionFloors.some((floor) => floor.floorId === activeId);
     if (!exists) {
       setActiveId(suggestedActiveId);
       return;
     }
     if (followActivity && suggestedActiveId && suggestedActiveId !== activeId) {
-      const activeFloor = displayedFloors.find((f) => f.sessionID === activeId);
-      const suggestedFloor = displayedFloors.find((f) => f.sessionID === suggestedActiveId);
-      if (suggestedFloor?.status === "working" && activeFloor?.status !== "working") {
-        setActiveId(suggestedActiveId);
-      }
+      setSelectedActorId(null);
+      setActiveId(suggestedActiveId);
     }
-  }, [displayedFloors, activeId, suggestedActiveId, pinnedHydrated, activeHydrated, followActivity]);
+  }, [openSessionFloors, activeId, suggestedActiveId, pinnedHydrated, activeHydrated, followActivity]);
 
   useEffect(() => {
     if (activeHydrated && activeId !== null) {
@@ -311,6 +335,8 @@ export default function Home() {
     channelRef.current.onmessage = (event) => {
       if (event.data.type === "FLOOR_SWITCH") {
         if (event.data.sessionID !== activeId) {
+          setSelectedActorId(null);
+          setFollowActivity(false);
           setActiveId(event.data.sessionID);
         }
       }
@@ -345,17 +371,21 @@ export default function Home() {
   }, [devPanelOpen]);
 
   useEffect(() => {
-    if (!displayedFloors.length) return;
-    const currentFloor = displayedFloors.find((f) => f.sessionID === activeId);
-    const busyFloor = displayedFloors.find((f) => f.status === "working" && f.sessionID !== activeId);
-
-    if (busyFloor && currentFloor?.status !== "working" && !promoteToast && !followActivity) {
-      const timeout = setTimeout(() => setPromoteToast(null), 5000);
-      setPromoteToast({ floor: busyFloor, timeout });
+    const previous = notificationStateRef.current;
+    const next = transitionSessionNotifications(previous, {
+      model: sessionModel,
+      followedFloorId: followActivity ? activeId : null,
+    });
+    notificationStateRef.current = next;
+    setNotificationState(next);
+    if (previous) {
+      const known = new Set(previous.notifications.map((notification) => notification.id));
+      const additions = next.notifications.filter((notification) => !known.has(notification.id));
+      if (additions.length > 0) {
+        setUnreadNotificationIds((current) => new Set([...current, ...additions.map((notification) => notification.id)]));
+      }
     }
-
-    return () => {};
-  }, [displayedFloors, activeId, promoteToast, followActivity]);
+  }, [sessionModel, followActivity, activeId]);
 
   const handlePin = useCallback((sessionID: string) => {
     setPinnedFloors((prev) => {
@@ -371,22 +401,25 @@ export default function Home() {
   }, [persistPinnedFloors]);
 
   const handleClose = useCallback(async (sessionID: string) => {
-    try {
-      await fetch(`/api/floor/${sessionID}/close`, { method: "POST" });
-    } catch {}
-  }, []);
+    const floor = v2Floors.find((candidate) => candidate.floorId === sessionID);
+    if (!floor || !window.confirm(`Complete ${floor.title}? It will leave the active office.`)) return;
+    const result = await requestFloorClose(sessionID);
+    setCommandMessage(result.message);
+  }, [v2Floors]);
 
   const handleRename = useCallback(async (sessionID: string, title: string) => {
-    try {
-      await fetch(`/api/floor/${sessionID}/rename`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ title }),
-      });
-    } catch {}
+    const result = await requestFloorRename(sessionID, title);
+    setCommandMessage(result.message);
   }, []);
 
   const handleSelect = useCallback((id: string) => {
+    setFollowActivity(false);
+    setSelectedActorId(null);
+    setComparisonIds([]);
+    setUnreadNotificationIds((current) => new Set([...current].filter((notificationId) => {
+      const notification = notificationStateRef.current?.notifications.find((candidate) => candidate.id === notificationId);
+      return notification?.floorId !== id;
+    })));
     setActiveId(id);
     channelRef.current?.postMessage({ type: "FLOOR_SWITCH", sessionID: id });
     setIsBottomSheetOpen(false);
@@ -396,17 +429,59 @@ export default function Home() {
     setIsBottomSheetOpen(true);
   }, []);
 
-  const handleCubicleClick = useCallback((cubicle: CubicleDTO) => {
-    setSelectedCubicle(cubicle);
+  const handleActorSelect = useCallback((actorId: string) => {
+    if (document.activeElement instanceof HTMLElement) inspectorTriggerRef.current = document.activeElement;
+    setSelectedActorId(actorId);
   }, []);
 
   const handleInspectorClose = useCallback(() => {
-    setSelectedCubicle(null);
+    setSelectedActorId(null);
+    requestAnimationFrame(() => inspectorTriggerRef.current?.focus());
   }, []);
 
   const activeFloor = useMemo(() => {
     return displayedFloors.find(f => f.sessionID === activeId) ?? displayedFloors[0] ?? null;
   }, [displayedFloors, activeId]);
+  const selectedCubicle = useMemo(() => {
+    if (!selectedActorId) return null;
+    const actor = v2Actors.find((candidate) => candidate.actorId === selectedActorId);
+    if (!actor || actor.floorId !== activeFloor?.sessionID) return null;
+    return activeFloor.cubicles.find((candidate) => candidate.agent === actor.agentKey) ?? null;
+  }, [selectedActorId, v2Actors, activeFloor]);
+  const allSessionFloors = useMemo(
+    () => [...sessionModel.working, ...sessionModel.quiet, ...sessionModel.completed],
+    [sessionModel],
+  );
+  const comparedFloors = comparisonIds
+    .map((id) => allSessionFloors.find((floor) => floor.floorId === id))
+    .filter((floor) => floor !== undefined);
+  const unreadByFloorId = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const notification of notificationState?.notifications ?? []) {
+      if (!unreadNotificationIds.has(notification.id)) continue;
+      counts.set(notification.floorId, (counts.get(notification.floorId) ?? 0) + 1);
+    }
+    return counts;
+  }, [notificationState, unreadNotificationIds]);
+  const handleCompare = useCallback((id: string) => {
+    setComparisonIds((current) => {
+      if (current.includes(id)) return current.filter((candidate) => candidate !== id);
+      if (current.length === 0 && activeId && activeId !== id) {
+        setFollowActivity(false);
+        return [activeId, id];
+      }
+      if (current.length >= 2) {
+        setCommandMessage("Comparison already contains two sessions");
+        return current;
+      }
+      setFollowActivity(false);
+      return [...current, id];
+    });
+  }, [activeId]);
+
+  useEffect(() => {
+    if (selectedActorId && !selectedCubicle) setSelectedActorId(null);
+  }, [selectedActorId, selectedCubicle]);
 
   // Roster room: desks are permanent, so no exit animations — a finished
   // agent rests in place (success beat, monitor-ON idle, then sleep).
@@ -415,24 +490,9 @@ export default function Home() {
     return v2Actors.filter(a => a.floorId === activeFloor.sessionID);
   }, [activeFloor, v2Actors]);
 
-  const activeFloorInvocations = useMemo(() => {
-    if (!activeFloor) return [];
-    return v2Invocations.filter(inv => inv.floorId === activeFloor.sessionID);
-  }, [activeFloor, v2Invocations]);
-
-  useLayoutEffect(() => {
-    latestActorsRef.current = v2Actors;
-    latestFloorsRef.current = v2Floors;
-    latestInvocationsRef.current = v2Invocations;
-  }, [v2Actors, v2Floors, v2Invocations]);
-
   useEffect(() => {
     if (presentationControllerRef.current) return;
-    presentationControllerRef.current = new PresentationController(
-      () => latestActorsRef.current,
-      () => latestFloorsRef.current,
-      () => latestInvocationsRef.current
-    );
+    presentationControllerRef.current = new PresentationController();
   }, []);
 
   useEffect(() => {
@@ -447,30 +507,8 @@ export default function Home() {
   }, []);
 
   useEffect(() => {
-    for (const invocation of activeFloorInvocations) {
-      if (
-        (invocation.executionStatus !== "requested" && invocation.executionStatus !== "started") ||
-        enqueuedInvocationIdsRef.current.has(invocation.invocationId)
-      ) {
-        continue;
-      }
-
-      const sender = activeFloorActors.find(
-        (actor) => actor.actorId === invocation.senderActorId
-      );
-      const recipient = activeFloorActors.find(
-        (actor) => actor.actorId === invocation.recipientActorId
-      );
-      if (!sender || !recipient || sender.actorId === recipient.actorId) continue;
-
-      const job = presentationControllerRef.current?.enqueueHandoff(
-        invocation,
-        sender,
-        recipient
-      );
-      if (job) enqueuedInvocationIdsRef.current.add(invocation.invocationId);
-    }
-  }, [activeFloorInvocations, activeFloorActors]);
+    presentationControllerRef.current?.reconcile(activity);
+  }, [activity]);
 
   useEffect(() => {
     let animationFrameId = 0;
@@ -480,6 +518,12 @@ export default function Home() {
       const deltaTime = now - lastUpdateTime;
       lastUpdateTime = now;
       const states = presentationControllerRef.current?.update(deltaTime) ?? [];
+      const poses = presentationControllerRef.current?.getActorPoseStates(Date.now()) ?? [];
+      setActorPoseStates((previous) => {
+        const previousKey = previous.map((state) => `${state.actorId}:${state.pose}:${state.expiresAt}`).join("|");
+        const nextKey = poses.map((state) => `${state.actorId}:${state.pose}:${state.expiresAt}`).join("|");
+        return previousKey === nextKey ? previous : poses;
+      });
       if (states.length > 0) {
         hasHandoffStatesRef.current = true;
         setHandoffStates(states);
@@ -499,7 +543,11 @@ export default function Home() {
       <div className="relative flex h-dvh min-h-0 flex-col overflow-hidden">
         <div className="absolute inset-x-0 top-0 z-40">
         <Header
-        liveCount={displayedFloors.length}
+        liveCount={openSessionFloors.length}
+        workingCount={sessionModel.working.length}
+        quietCount={sessionModel.quiet.length}
+        activeTaskCount={sessionModel.working.reduce((count, floor) => count + floor.activeInvocationCount, 0)}
+        unreadNotificationCount={unreadNotificationIds.size}
         sseStatus={displaySseStatus}
         reconnectAttempt={reconnectAttempt}
         sseFailedPermanently={sseStatus === "offline"}
@@ -509,6 +557,17 @@ export default function Home() {
         latencyMs={healthMetrics?.sseMetrics?.avgLatencyMs}
         followActivity={followActivity}
         onFollowActivityChange={setFollowActivity}
+        onOpenNotifications={() => setNotificationCenterOpen(true)}
+        onToggleComparison={() => {
+          if (comparisonIds.length === 2) setComparisonIds([]);
+          else {
+            if (activeId) setComparisonIds((current) => current.length === 0 ? [activeId] : current);
+            setIsSidebarOpen(true);
+            setIsBottomSheetOpen(true);
+          }
+        }}
+        comparisonActive={comparisonIds.length > 0}
+        navigatorOpen={isBottomSheetOpen}
         />
         </div>
 
@@ -520,54 +579,28 @@ export default function Home() {
           crtEnabled ? "crt" : "",
         ].join(" ")}
         >
-        <AnimatePresence>
-          {promoteToast && (
-            <motion.div
-              className="fixed top-16 left-1/2 -translate-x-1/2 z-40"
-              initial={{ opacity: 0, transform: "translateY(-20px)" }}
-              animate={{ opacity: 1, transform: "translateY(0px)" }}
-              exit={{ opacity: 0, transform: "translateY(-20px)" }}
-              transition={{ duration: 0.2, ease: [0.23, 1, 0.32, 1] }}
-            >
-              <div
-                className="bg-[#1E293B] border-2 px-4 py-2 rounded-[6px] flex items-center gap-3"
-                style={{ borderColor: "#3B82F6" }}
-                role="alert"
-                aria-live="polite"
-              >
-                <span className="text-sm text-[#F1F5F9]">
-                  Floor <strong>{promoteToast.floor.title || promoteToast.floor.project}</strong> is active
-                </span>
-                <button
-                  onClick={() => {
-                    setActiveId(promoteToast.floor.sessionID);
-                    channelRef.current?.postMessage({ type: "FLOOR_SWITCH", sessionID: promoteToast.floor.sessionID });
-                    clearTimeout(promoteToast.timeout);
-                    setPromoteToast(null);
-                  }}
-                  className="px-3 py-1 text-xs font-bold text-[#3B82F6] hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#3B82F6] focus-visible:ring-offset-2 focus-visible:ring-offset-[#0F172A] rounded cursor-pointer"
-                  style={{ fontFamily: "var(--font-inter), Inter, sans-serif" }}
-                >
-                  Switch
-                </button>
-                <button
-                  onClick={() => {
-                    clearTimeout(promoteToast.timeout);
-                    setPromoteToast(null);
-                  }}
-                  className="px-2 text-sm text-[#94A3B8] hover:text-[#F1F5F9] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#3B82F6] focus-visible:ring-offset-2 focus-visible:ring-offset-[#0F172A] rounded cursor-pointer"
-                  style={{ fontFamily: "var(--font-inter), Inter, sans-serif" }}
-                  aria-label="Dismiss"
-                >
-                  ✕
-                </button>
-              </div>
-            </motion.div>
-          )}
-        </AnimatePresence>
+        <div className="sr-only" role="status" aria-live="polite">
+          {notificationState?.notifications[0]
+            ? `${notificationState.notifications[0].title} ${notificationState.notifications[0].kind.replaceAll("-", " ")}`
+            : ""}
+        </div>
+        {commandMessage && (
+          <div className="fixed left-1/2 top-16 z-40 -translate-x-1/2 rounded-[4px] border border-[#334155] bg-[#0F172A] px-4 py-2 text-sm text-[#E2E8F0]" role="status">
+            {commandMessage}
+            <button type="button" onClick={() => setCommandMessage(null)} className="ml-3 cursor-pointer text-[#60A5FA]" aria-label="Dismiss message">Dismiss</button>
+          </div>
+        )}
 
-        <section aria-label="Office grid" className={`min-h-0 flex-1 overflow-hidden ${isSidebarOpen ? "lg:ml-64" : ""}`}>
-          <SceneViewport className="h-full w-full">
+        <section aria-label="Office grid" className={`min-h-0 flex-1 overflow-hidden ${isSidebarOpen ? "lg:ml-[22rem]" : ""}`}>
+          <SceneViewport
+            className="h-full w-full"
+            world={world}
+            activity={activity}
+            activeSessionId={activeId}
+            onAgentClick={(actorId) => {
+              handleActorSelect(actorId);
+            }}
+          >
             {displayedFloors.length === 0 ? (
               <div className="absolute inset-0 flex items-center justify-center bg-transparent">
                 <p
@@ -579,16 +612,14 @@ export default function Home() {
               </div>
             ) : (
               <OfficeScene
-                floors={v2Floors}
+                floors={v2Floors.filter((floor) => !floor.closed)}
                 actors={activeFloorActors}
-                invocations={activeFloorInvocations}
                 activeFloorId={activeId}
                 handoffStates={handoffStates}
+                actorPoseStates={actorPoseStates}
+                activity={activity}
                 onCubicleClick={(actor) => {
-                  const cubicle = activeFloor?.cubicles.find(
-                    (candidate) => candidate.agent === actor.agentKey
-                  );
-                  if (cubicle) handleCubicleClick(cubicle);
+                  handleActorSelect(actor.actorId);
                 }}
               />
             )}
@@ -652,13 +683,17 @@ export default function Home() {
         </main>
 
         <FloorSwitcher
-          floors={displayedFloors}
+          model={sessionModel}
+          floorDetails={displayedFloors}
           activeId={activeId}
           onSelect={handleSelect}
           pinnedFloors={pinnedFloors}
           onPin={handlePin}
           onClose={handleClose}
           onRename={handleRename}
+          onCompare={handleCompare}
+          comparisonIds={comparisonIds}
+          unreadByFloorId={unreadByFloorId}
           sseStatus={sseStatus}
           isBottomSheetOpen={isBottomSheetOpen}
           onBottomSheetChange={setIsBottomSheetOpen}
@@ -666,6 +701,30 @@ export default function Home() {
           onFollowActivityChange={setFollowActivity}
           desktopOpen={isSidebarOpen}
           onDesktopClose={() => setIsSidebarOpen(false)}
+        />
+        {comparedFloors.length === 2 && (
+          <MultiSessionCompare
+            left={comparedFloors[0]}
+            right={comparedFloors[1]}
+            onClose={() => setComparisonIds([])}
+            onOpenFloor={handleSelect}
+          />
+        )}
+        <NotificationCenter
+          notifications={notificationState?.notifications ?? []}
+          unreadIds={unreadNotificationIds}
+          open={notificationCenterOpen}
+          onClose={() => setNotificationCenterOpen(false)}
+          onMarkAllRead={() => setUnreadNotificationIds(new Set())}
+          onSelectFloor={(id) => {
+            const floor = allSessionFloors.find((candidate) => candidate.floorId === id);
+            if (floor?.lifecycle === "completed") handleCompare(id);
+            else handleSelect(id);
+            setUnreadNotificationIds((current) => new Set([...current].filter((notificationId) => {
+              const notification = notificationStateRef.current?.notifications.find((candidate) => candidate.id === notificationId);
+              return notification?.floorId !== id;
+            })));
+          }}
         />
         {!isSidebarOpen && (
           <button

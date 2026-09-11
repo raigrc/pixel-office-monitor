@@ -34,6 +34,10 @@ export function worldToGrid(x: number, z: number): { gx: number; gz: number } {
   };
 }
 
+export function isInsideNavigation(x: number, z: number): boolean {
+  return x >= -NAV_HALF_EXTENT && x < NAV_HALF_EXTENT && z >= -NAV_HALF_EXTENT && z < NAV_HALF_EXTENT;
+}
+
 export function gridToWorld(gx: number, gz: number): THREE.Vector3 {
   const x = gx * NAV_CELL_SIZE + NAV_CELL_SIZE * 0.5 - NAV_HALF_EXTENT;
   const z = gz * NAV_CELL_SIZE + NAV_CELL_SIZE * 0.5 - NAV_HALF_EXTENT;
@@ -128,6 +132,9 @@ export function findPath(
   start: THREE.Vector3,
   goal: THREE.Vector3
 ): PathResult {
+  if (!isInsideNavigation(start.x, start.z) || !isInsideNavigation(goal.x, goal.z)) {
+    return { waypoints: [], blocked: true };
+  }
   const { gx: startGx, gz: startGz } = worldToGrid(start.x, start.z);
   const { gx: goalGx, gz: goalGz } = worldToGrid(goal.x, goal.z);
 
@@ -177,7 +184,7 @@ export function findPath(
     openStart++;
 
     if (current.gx === goalGx && current.gz === goalGz) {
-      return reconstructPath(grid, current, startGx, startGz);
+      return reconstructPath(grid, current, startGx, startGz, start, goal);
     }
 
     const currentIndex = idx(current.gx, current.gz, grid.width);
@@ -189,6 +196,14 @@ export function findPath(
 
       if (ngx < 0 || ngx >= grid.width || ngz < 0 || ngz >= grid.height) continue;
       if (!isNavWalkable(grid, ngx, ngz)) continue;
+      if (
+        n.dx !== 0 &&
+        n.dz !== 0 &&
+        (!isNavWalkable(grid, current.gx + n.dx, current.gz) ||
+          !isNavWalkable(grid, current.gx, current.gz + n.dz))
+      ) {
+        continue;
+      }
 
       const neighborIndex = idx(ngx, ngz, grid.width);
       if (SCRATCH_CLOSED[neighborIndex]) continue;
@@ -239,7 +254,9 @@ function reconstructPath(
   grid: NavGrid,
   goalNode: Node,
   startGx: number,
-  startGz: number
+  startGz: number,
+  exactStart: THREE.Vector3,
+  exactGoal: THREE.Vector3,
 ): PathResult {
   const path: { gx: number; gz: number }[] = [];
   let gx = goalNode.gx;
@@ -262,6 +279,8 @@ function reconstructPath(
     waypoints.push(wp);
   }
 
+  waypoints[0] = exactStart.clone();
+  waypoints[waypoints.length - 1] = exactGoal.clone();
   const simplified = stringPull(waypoints, grid);
   return { waypoints: simplified, blocked: false };
 }
@@ -289,12 +308,21 @@ function lineOfSight(grid: NavGrid, a: THREE.Vector3, b: THREE.Vector3): boolean
   const dist = Math.hypot(dx, dz);
   const steps = Math.ceil(dist / (NAV_CELL_SIZE * 0.5));
 
+  let previous = worldToGrid(a.x, a.z);
   for (let i = 1; i <= steps; i++) {
     const t = i / steps;
     const x = a.x + dx * t;
     const z = a.z + dz * t;
     const { gx, gz } = worldToGrid(x, z);
     if (!isNavWalkable(grid, gx, gz)) return false;
+    if (
+      gx !== previous.gx &&
+      gz !== previous.gz &&
+      (!isNavWalkable(grid, gx, previous.gz) || !isNavWalkable(grid, previous.gx, gz))
+    ) {
+      return false;
+    }
+    previous = { gx, gz };
   }
   return true;
 }

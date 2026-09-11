@@ -17,7 +17,7 @@ import { getAgentStateAnimationClass } from "@/lib/agent-animations";
  * - A11y: role=img aria-label="{spriteKey} {state}", pixelated rendering.
  */
 
-export type SpriteState = "working" | "sleeping" | "idle" | "thinking" | "delegating" | "celebrating";
+export type SpriteState = "working" | "sleeping" | "idle" | "thinking" | "delegating" | "celebrating" | "blocked";
 export type SpriteProps = {
   spriteKey: string;
   state: SpriteState;

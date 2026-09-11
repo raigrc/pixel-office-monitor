@@ -12,6 +12,10 @@ export type SseDisplayStatus =
 
 type HeaderProps = {
   liveCount?: number;
+  workingCount?: number;
+  quietCount?: number;
+  activeTaskCount?: number;
+  unreadNotificationCount?: number;
   sseStatus?: SseDisplayStatus;
   reconnectAttempt?: number;
   sseFailedPermanently?: boolean;
@@ -21,6 +25,10 @@ type HeaderProps = {
   latencyMs?: number;
   followActivity?: boolean;
   onFollowActivityChange?: (enabled: boolean) => void;
+  onOpenNotifications?: () => void;
+  onToggleComparison?: () => void;
+  comparisonActive?: boolean;
+  navigatorOpen?: boolean;
 };
 
 /**
@@ -30,6 +38,10 @@ type HeaderProps = {
  */
 export default function Header({
   liveCount,
+  workingCount,
+  quietCount,
+  activeTaskCount,
+  unreadNotificationCount = 0,
   sseStatus = "connecting",
   reconnectAttempt = 0,
   sseFailedPermanently = false,
@@ -39,6 +51,10 @@ export default function Header({
   latencyMs,
   followActivity = false,
   onFollowActivityChange,
+  onOpenNotifications,
+  onToggleComparison,
+  comparisonActive = false,
+  navigatorOpen = false,
 }: HeaderProps) {
   const [isMobile, setIsMobile] = useState(false);
 
@@ -72,7 +88,7 @@ export default function Header({
           <div
             className={[
               "inline-flex items-center gap-1.5 rounded-[4px] border-2 border-[#22C55E]/50 bg-[#22C55E]/10 px-2.5 py-1 text-[8px] tracking-widest text-[#22C55E] transition-colors duration-200 cursor-default",
-              isMobile ? "" : "hidden md:inline-flex",
+              isMobile ? "hidden sm:inline-flex" : "hidden md:inline-flex",
             ].join(" ")}
             style={{ fontFamily: "var(--font-pixel), monospace" }}
             role="note"
@@ -86,7 +102,7 @@ export default function Header({
           <div
             className={[
               "inline-flex items-center gap-1.5 rounded-[4px] border-2 border-[#F59E0B]/50 bg-[#F59E0B]/10 px-2.5 py-1 text-[8px] tracking-widest text-[#F59E0B] transition-colors duration-200 cursor-default",
-              isMobile ? "" : "hidden md:inline-flex",
+              isMobile ? "hidden sm:inline-flex" : "hidden md:inline-flex",
             ].join(" ")}
             style={{ fontFamily: "var(--font-pixel), monospace" }}
             role="note"
@@ -100,7 +116,7 @@ export default function Header({
           <div
             className={[
               "inline-flex items-center gap-1.5 rounded-[4px] border-2 border-[#F59E0B]/50 bg-[#F59E0B]/10 px-2.5 py-1 text-[8px] tracking-widest text-[#F59E0B] transition-colors duration-200 cursor-default",
-              isMobile ? "" : "hidden md:inline-flex",
+              isMobile ? "hidden sm:inline-flex" : "hidden md:inline-flex",
             ].join(" ")}
             style={{ fontFamily: "var(--font-pixel), monospace" }}
             role="note"
@@ -115,7 +131,7 @@ export default function Header({
           <div
             className={[
               "inline-flex items-center gap-1.5 rounded-[4px] border-2 border-[#38BDFC]/50 bg-[#38BDFC]/10 px-2.5 py-1 text-[8px] tracking-widest text-[#38BDFC] transition-colors duration-200 cursor-default",
-              isMobile ? "" : "hidden md:inline-flex",
+              isMobile ? "hidden sm:inline-flex" : "hidden md:inline-flex",
             ].join(" ")}
             style={{ fontFamily: "var(--font-pixel), monospace" }}
             role="note"
@@ -132,7 +148,7 @@ export default function Header({
             onClick={onSseRetry}
             className={[
               "inline-flex items-center gap-1.5 rounded-[4px] border-2 border-[#EF4444]/50 bg-[#EF4444]/10 px-2.5 py-1 text-[8px] tracking-widest text-[#EF4444] transition-colors duration-200 cursor-pointer hover:bg-[#EF4444]/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#EF4444] focus-visible:ring-offset-2 focus-visible:ring-offset-[#0F172A]",
-              isMobile ? "" : "hidden md:inline-flex",
+              isMobile ? "hidden sm:inline-flex" : "hidden md:inline-flex",
             ].join(" ")}
             style={{ fontFamily: "var(--font-pixel), monospace" }}
             role="note"
@@ -203,7 +219,7 @@ export default function Header({
 
       {/* Right: live count badge + status + mobile floor switcher trigger */}
       <div className="flex items-center gap-3 shrink-0">
-        {typeof liveCount === "number" && (
+        {!isMobile && typeof (workingCount ?? liveCount) === "number" && (
           <div
             className={[
               "hidden items-center gap-1.5 rounded-full border-2 border-[#334155] bg-[#1E293B] px-3 py-1 text-[8px] font-bold tracking-widest text-[#F1F5F9] cursor-default transition-colors duration-200 shrink-0 sm:inline-flex",
@@ -211,19 +227,19 @@ export default function Header({
             ].join(" ")}
             style={{ fontFamily: "var(--font-pixel), monospace" }}
             aria-live="polite"
-            aria-label={`${liveCount} active floors`}
+            aria-label={`${workingCount ?? liveCount} working floors, ${quietCount ?? 0} quiet floors, ${activeTaskCount ?? 0} active tasks`}
           >
             <span className="inline-block h-2 w-2 rounded-full bg-[#22C55E]" aria-hidden="true" />
-            {liveCount} LIVE
+            {workingCount ?? liveCount} WORKING
           </div>
         )}
-        {getStatusBadge()}
-        {sseStatus === "live" && latencyMs !== undefined && latencyMs !== null && (
+        {!isMobile && getStatusBadge()}
+        {!isMobile && sseStatus === "live" && latencyMs !== undefined && latencyMs !== null && (
           <span className={["inline-flex items-center gap-1 rounded-[4px] border-2 border-[#334155] bg-[#1E293B] px-2.5 py-1 text-[8px] tracking-widest text-[#64748B] shrink-0", isMobile ? "hidden sm:inline-flex" : ""].join(" ")}>
             {latencyMs}ms
           </span>
         )}
-        {onFollowActivityChange && (() => {
+        {!isMobile && onFollowActivityChange && (() => {
             const followBtnClass = [
               "inline-flex items-center gap-1.5 rounded-[4px] border-2 px-2.5 py-1 text-[8px] tracking-widest shrink-0 transition-colors duration-200 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#3B82F6] focus-visible:ring-offset-2 focus-visible:ring-offset-[#0F172A]",
               followActivity
@@ -245,13 +261,36 @@ export default function Header({
               </button>
             );
           })()}
+        {onToggleComparison && (
+          <button
+            type="button"
+            onClick={onToggleComparison}
+            className={`hidden min-h-9 cursor-pointer items-center rounded-[4px] border-2 px-2.5 text-[8px] tracking-widest transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#3B82F6] sm:inline-flex ${comparisonActive ? "border-[#3B82F6] bg-[#3B82F6]/15 text-[#60A5FA]" : "border-[#334155] bg-[#1E293B] text-[#94A3B8] hover:text-white"}`}
+            style={{ fontFamily: "var(--font-pixel), monospace" }}
+            aria-pressed={comparisonActive}
+          >
+            COMPARE
+          </button>
+        )}
+        {onOpenNotifications && (
+          <button
+            type="button"
+            onClick={onOpenNotifications}
+            className="relative flex h-9 w-9 cursor-pointer items-center justify-center rounded-[6px] border-2 border-[#334155] bg-[#1E293B] text-[#F1F5F9] transition-colors hover:bg-[#24324D] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#3B82F6]"
+            aria-label={`Open notifications, ${unreadNotificationCount} unread`}
+          >
+            <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4" /></svg>
+            {unreadNotificationCount > 0 && <span className="absolute -right-1 -top-1 min-w-4 rounded-full bg-[#3B82F6] px-1 text-[8px] font-bold leading-4 text-white">{unreadNotificationCount > 9 ? "9+" : unreadNotificationCount}</span>}
+          </button>
+        )}
         {showFloorSwitcherTrigger && isMobile && onOpenFloorSwitcher && (
           <button
             type="button"
             onClick={onOpenFloorSwitcher}
             className="inline-flex items-center justify-center h-9 w-9 rounded-[6px] border-2 border-[#334155] bg-[#1E293B] text-[#F1F5F9] transition-colors duration-200 hover:bg-[#24324D] hover:border-[#475569] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#3B82F6] focus-visible:ring-offset-2 focus-visible:ring-offset-[#0F172A] cursor-pointer shrink-0"
             aria-label="Open floor switcher"
-            aria-expanded="false"
+            aria-expanded={navigatorOpen}
+            aria-controls="mobile-session-navigator"
           >
             <svg className="h-5 w-5" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
               <rect x="3" y="3" width="18" height="18" rx="2" />

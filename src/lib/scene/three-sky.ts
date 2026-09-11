@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { deriveTimeOfDayFromDate, normalizeTimeOfDay } from './lighting-time';
 
 export type SkyPreset = 'luna' | 'mars' | 'terra';
 
@@ -8,14 +9,155 @@ export interface SkyConfig {
   liveMode: boolean;
 }
 
+/** Readable lighting stages. Dusk covers both dawn and dusk transitions. */
+export type LightingStage = 'day' | 'dusk' | 'night';
+
+/** Stage windows in local hours. */
+export const DAY_START = 7;
+export const DAY_END = 17;
+export const DUSK_MORNING_START = 5;
+export const DUSK_EVENING_END = 20;
+/**
+ * Minimum effective ambient intensity at night, every preset. Flat ambient
+ * alone leaves dark-albedo terrain near-black through ACES, so night also
+ * carries a cool directional fill (see NIGHT_FILL_INTENSITY): readability
+ * beats physical realism for a monitoring UI.
+ */
+export const NIGHT_AMBIENT_FLOOR = 0.22;
+/** Cool directional fill at full night. Zero at full day. */
+export const NIGHT_FILL_INTENSITY = 0.3;
+export const NIGHT_FILL_HEX = 0x9db8e8;
+/** Cool neutral fill used as the night ambient color. */
+export const NIGHT_AMBIENT_HEX = 0x8fa3c7;
+const NIGHT_ZENITH_HEX = 0x070b16;
+const NIGHT_HORIZON_HEX = 0x101a2e;
+const NIGHT_GROUND_HEX = 0x04060b;
+/** Warm horizon glow blended in during dawn/dusk transitions. */
+const DUSK_WARM_HEX = 0xb45a2a;
+
 /**
  * Converts epoch millis to fractional hours of day.
  * Input must be Date.now() scale. Boot-clock values (performance.now()
- * scale) land near 1970 and read ~0, so misuse stays visible as night.
+ * scale) land near 1970 and freeze the sky instead of tracking the wall
+ * clock, so misuse stays visible as a stuck sky. The engine always passes
+ * Date.now() (see three-engine render).
  */
 export function deriveTimeOfDayFromEpoch(epochMs: number): number {
-  const date = new Date(epochMs);
-  return date.getHours() + date.getMinutes() / 60 + date.getSeconds() / 3600;
+  return deriveTimeOfDayFromDate(new Date(epochMs));
+}
+
+/**
+ * Effective time of day for a sky config. liveMode reads the real local
+ * clock from epoch millis; manual mode ignores the clock entirely.
+ */
+export function resolveTimeOfDay(config: Pick<SkyConfig, 'timeOfDay' | 'liveMode'>, timeMs?: number): number {
+  if (config.liveMode && timeMs !== undefined) {
+    return deriveTimeOfDayFromEpoch(timeMs);
+  }
+  return config.timeOfDay;
+}
+
+export function stageForTimeOfDay(timeOfDay: number): LightingStage {
+  const t = normalizeTimeOfDay(timeOfDay);
+  if (t >= DUSK_MORNING_START && t < DAY_START) return 'dusk';
+  if (t >= DAY_START && t < DAY_END) return 'day';
+  if (t >= DAY_END && t < DUSK_EVENING_END) return 'dusk';
+  return 'night';
+}
+
+function smoothstep(edge0: number, edge1: number, x: number): number {
+  const t = Math.min(1, Math.max(0, (x - edge0) / (edge1 - edge0)));
+  return t * t * (3 - 2 * t);
+}
+
+function lerpHex(a: number, b: number, t: number): number {
+  const mix = (x: number, y: number): number => Math.round(x + (y - x) * t);
+  return (
+    (mix((a >> 16) & 255, (b >> 16) & 255) << 16) |
+    (mix((a >> 8) & 255, (b >> 8) & 255) << 8) |
+    mix(a & 255, b & 255)
+  );
+}
+
+export interface LightingProfile {
+  /** Normalized input hour in [0, 24). */
+  timeOfDay: number;
+  stage: LightingStage;
+  /** 0 at full night, 1 at full day. Smooth across every boundary. */
+  daylight: number;
+  /** Warm-transition glow. Peaks mid dawn/dusk, 0 in day and night. */
+  duskWeight: number;
+  /** Directional sun multiplier. Exactly 0 through full night. */
+  sunIntensity: number;
+  /** Cool directional fill. 0 at full day, NIGHT_FILL_INTENSITY at night. */
+  fillIntensity: number;
+  /** Continuous solar vector. Unbroken across day/dusk/night. */
+  sunDirection: { x: number; y: number; z: number };
+  /** Effective ambient intensity. Never below NIGHT_AMBIENT_FLOOR. */
+  ambientIntensity: number;
+  ambientHex: number;
+  zenithHex: number;
+  horizonHex: number;
+  groundHex: number;
+}
+
+/**
+ * Pure lighting calculation. No WebGL, no scene graph: every output is
+ * plain data so stages, floors, colors, and transitions unit-test
+ * directly. update() below is the only impure consumer.
+ */
+export function computeLightingProfile(timeOfDay: number, preset: SkyPreset): LightingProfile {
+  const t = normalizeTimeOfDay(timeOfDay);
+  const base = SKY_PRESETS[preset];
+
+  const daylight = smoothstep(5, 7, t) * (1 - smoothstep(17, 20, t));
+  const dawn = smoothstep(5, 6, t) * (1 - smoothstep(6, 7, t));
+  const dusk = smoothstep(17, 18, t) * (1 - smoothstep(18, 20, t));
+  const duskWeight = Math.max(dawn, dusk);
+
+  const solarAngle = ((t - 6) / 24) * Math.PI * 2;
+  const sunElevation = Math.sin(solarAngle) * (Math.PI / 2 - base.tilt);
+  const sunAzimuth = solarAngle;
+  const sunDirection = {
+    x: Math.cos(sunElevation) * Math.sin(sunAzimuth),
+    y: Math.sin(sunElevation),
+    z: Math.cos(sunElevation) * Math.cos(sunAzimuth),
+  };
+  const elevationSin = Math.sin(sunElevation);
+
+  // Zero through full night; reduced but nonzero while the sun is up
+  // inside a dusk window. Never fakes daylight at midnight.
+  const sunIntensity = Math.max(0, elevationSin) * base.sunIntensity * daylight;
+  // Moonlight-style relief shading. Flat ambient alone cannot model
+  // terrain relief, so night keeps a cool directional component.
+  const fillIntensity = (1 - daylight) * NIGHT_FILL_INTENSITY;
+
+  // Day formula unchanged from the pre-1.5 profile; night lands on the
+  // explicit readable floor instead of ~0.05.
+  const dayAmbient = (0.2 + 0.5 * Math.max(0, elevationSin)) * base.ambientIntensity;
+  const ambientIntensity =
+    NIGHT_AMBIENT_FLOOR + Math.max(0, dayAmbient - NIGHT_AMBIENT_FLOOR) * daylight;
+
+  const zenithHex = lerpHex(NIGHT_ZENITH_HEX, base.zenith.getHex(), daylight);
+  const groundHex = lerpHex(NIGHT_GROUND_HEX, base.ground.getHex(), daylight);
+  const dayHorizon = lerpHex(NIGHT_HORIZON_HEX, base.horizon.getHex(), daylight);
+  const horizonHex = lerpHex(dayHorizon, DUSK_WARM_HEX, duskWeight * 0.6);
+  const ambientHex = lerpHex(NIGHT_AMBIENT_HEX, base.zenith.getHex(), daylight);
+
+  return {
+    timeOfDay: t,
+    stage: stageForTimeOfDay(t),
+    daylight,
+    duskWeight,
+    sunIntensity,
+    fillIntensity,
+    sunDirection,
+    ambientIntensity,
+    ambientHex,
+    zenithHex,
+    horizonHex,
+    groundHex,
+  };
 }
 
 const SKY_PRESETS: Record<SkyPreset, {
@@ -92,6 +234,8 @@ export class ThreeSky {
   private skyMaterial: THREE.ShaderMaterial | null = null;
   private sunLight: THREE.DirectionalLight | null = null;
   private ambientLight: THREE.AmbientLight | null = null;
+  /** Cool night fill. Renders terrain relief readable without faking sun. */
+  private fillLight: THREE.DirectionalLight | null = null;
 
   private config: SkyConfig = {
     preset: 'terra',
@@ -101,6 +245,8 @@ export class ThreeSky {
 
   private lastPmremUpdate = 0;
   private readonly PMREM_THROTTLE = 333;
+  /** Retained environment target. Disposed only after a replacement lands. */
+  private envRenderTarget: THREE.WebGLRenderTarget | null = null;
 
   constructor(scene: THREE.Scene, renderer: THREE.WebGLRenderer) {
     this.scene = scene;
@@ -153,6 +299,11 @@ export class ThreeSky {
 
     this.ambientLight = new THREE.AmbientLight(0xffffff, 0.5);
     this.scene.add(this.ambientLight);
+
+    this.fillLight = new THREE.DirectionalLight(NIGHT_FILL_HEX, 0);
+    this.fillLight.position.set(-40, 60, -20);
+    this.fillLight.castShadow = false;
+    this.scene.add(this.fillLight);
   }
 
   setConfig(config: Partial<SkyConfig>): void {
@@ -165,41 +316,43 @@ export class ThreeSky {
   }
 
   update(timeMs?: number): void {
-    if (!this.skyMaterial || !this.sunLight || !this.ambientLight) return;
+    if (!this.skyMaterial || !this.sunLight || !this.ambientLight || !this.fillLight) return;
 
-    let timeOfDay = this.config.timeOfDay;
+    const timeOfDay = resolveTimeOfDay(this.config, timeMs);
     if (this.config.liveMode && timeMs !== undefined) {
-      timeOfDay = deriveTimeOfDayFromEpoch(timeMs);
       this.config.timeOfDay = timeOfDay;
     }
 
     const preset = SKY_PRESETS[this.config.preset];
-
-    const solarAngle = ((timeOfDay - 6) / 24) * Math.PI * 2;
-    const sunElevation = Math.sin(solarAngle) * (Math.PI / 2 - preset.tilt);
-    const sunAzimuth = solarAngle;
+    const profile = computeLightingProfile(timeOfDay, this.config.preset);
 
     const sunDir = new THREE.Vector3(
-      Math.cos(sunElevation) * Math.sin(sunAzimuth),
-      Math.sin(sunElevation),
-      Math.cos(sunElevation) * Math.cos(sunAzimuth)
+      profile.sunDirection.x,
+      profile.sunDirection.y,
+      profile.sunDirection.z,
     ).normalize();
 
     this.sunLight.position.copy(sunDir.clone().multiplyScalar(100));
     this.sunLight.target.position.set(0, 0, 0);
     this.sunLight.color.copy(preset.sunColor);
-    this.sunLight.intensity = Math.max(0, Math.sin(sunElevation)) * preset.sunIntensity;
+    this.sunLight.intensity = profile.sunIntensity;
 
-    this.ambientLight.color.copy(preset.zenith);
-    this.ambientLight.intensity = Math.max(0.1, Math.sin(sunElevation) * 0.5 + 0.2) * preset.ambientIntensity;
+    this.ambientLight.color.setHex(profile.ambientHex);
+    this.ambientLight.intensity = profile.ambientIntensity;
 
-    this.skyMaterial.uniforms.zenith.value.copy(preset.zenith);
-    this.skyMaterial.uniforms.horizon.value.copy(preset.horizon);
-    this.skyMaterial.uniforms.ground.value.copy(preset.ground);
+    this.fillLight.color.setHex(NIGHT_FILL_HEX);
+    this.fillLight.intensity = profile.fillIntensity;
+
+    this.skyMaterial.uniforms.zenith.value.setHex(profile.zenithHex);
+    this.skyMaterial.uniforms.horizon.value.setHex(profile.horizonHex);
+    this.skyMaterial.uniforms.ground.value.setHex(profile.groundHex);
     this.skyMaterial.uniforms.sunDirection.value.copy(sunDir);
-    this.skyMaterial.uniforms.sunIntensity.value = Math.max(0, Math.sin(sunElevation)) * preset.sunIntensity;
+    this.skyMaterial.uniforms.sunIntensity.value = profile.sunIntensity;
 
-    this.scene.background = new THREE.Color().copy(preset.horizon).lerp(preset.zenith, 0.3);
+    this.scene.background = new THREE.Color(profile.horizonHex).lerp(
+      new THREE.Color(profile.zenithHex),
+      0.3,
+    );
 
     const now = performance.now();
     if (now - this.lastPmremUpdate > this.PMREM_THROTTLE) {
@@ -211,9 +364,14 @@ export class ThreeSky {
   private updateEnvironment(): void {
     if (!this.skyMesh || !this.skyMaterial) return;
 
-    const renderTarget = this.pmremGenerator.fromScene(this.scene, 0.01);
-    this.scene.environment = renderTarget.texture;
-    renderTarget.dispose();
+    // Install the replacement first: scene.environment references the
+    // target's texture, so disposing before assignment would pull live
+    // lighting out from under the renderer.
+    const next = this.pmremGenerator.fromScene(this.scene, 0.01);
+    const prev = this.envRenderTarget;
+    this.scene.environment = next.texture;
+    this.envRenderTarget = next;
+    prev?.dispose();
   }
 
   getSunLight(): THREE.DirectionalLight | null {
@@ -222,6 +380,10 @@ export class ThreeSky {
 
   getAmbientLight(): THREE.AmbientLight | null {
     return this.ambientLight;
+  }
+
+  getFillLight(): THREE.DirectionalLight | null {
+    return this.fillLight;
   }
 
   dispose(): void {
@@ -243,6 +405,13 @@ export class ThreeSky {
       this.ambientLight.dispose();
       this.ambientLight = null;
     }
+    if (this.fillLight) {
+      this.scene.remove(this.fillLight);
+      this.fillLight.dispose();
+      this.fillLight = null;
+    }
+    this.envRenderTarget?.dispose();
+    this.envRenderTarget = null;
     this.pmremGenerator.dispose();
   }
 }

@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { SnapshotEnvelope, DeltaEnvelope, MonitorEvent } from "@/lib/monitor-types";
+import { applyFloorDelta, applyFloorSnapshot } from "@/lib/client/monitor-state";
 
 type MonitorStreamCallbacks = {
   onSnapshot?: (snapshot: SnapshotEnvelope) => void;
@@ -196,8 +197,7 @@ export function useMonitorState() {
   const [isHydrated, setIsHydrated] = useState(false);
 
   const applySnapshot = useCallback((snapshot: SnapshotEnvelope) => {
-    // Closed floors never render (close API only flags; prune reaps later).
-    setFloors(snapshot.floors.filter((f) => !f.closed));
+    setFloors(applyFloorSnapshot(snapshot.floors));
     setSessions(snapshot.sessions);
     setActors(snapshot.actors);
     setInvocations(snapshot.invocations);
@@ -208,23 +208,7 @@ export function useMonitorState() {
 
   const applyDelta = useCallback((delta: DeltaEnvelope) => {
     setFloors((prev) => {
-      let next = [...prev];
-      if (delta.upserts.floors) {
-        for (const floor of delta.upserts.floors) {
-          // A closed flag on upsert acts as removal (close API only flags).
-          if (floor.closed) {
-            next = next.filter((f) => f.floorId !== floor.floorId);
-            continue;
-          }
-          const idx = next.findIndex((f) => f.floorId === floor.floorId);
-          if (idx >= 0) next[idx] = floor;
-          else next.push(floor);
-        }
-      }
-      if (delta.removals.floors) {
-        next = next.filter((f) => !delta.removals.floors?.includes(f.floorId));
-      }
-      return next;
+      return applyFloorDelta(prev, delta.upserts.floors, delta.removals.floors);
     });
     if (delta.upserts.sessions) {
       setSessions((prev) => {

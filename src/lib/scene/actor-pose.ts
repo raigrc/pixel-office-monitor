@@ -1,4 +1,5 @@
 import type { ActorInfo, InvocationInfo } from "@/lib/monitor-types";
+import { resolveActorBasePose, resolveActorOutcomeBeat } from "@/lib/activity/monitor-to-activity";
 
 /**
  * Silence after which a stuck "working" state is treated as idle.
@@ -7,7 +8,7 @@ import type { ActorInfo, InvocationInfo } from "@/lib/monitor-types";
  * overlap guard). Genuinely busy agents renew `lastObservedAt` on every
  * event, so this only ever catches the stranded.
  */
-export const STALE_ACTIVITY_MS = 5 * 60 * 1000;
+export { STALE_ACTIVITY_MS } from "@/lib/activity/activity-model";
 
 /**
  * Awake window after a finished task: monitor stays ON (idle art) and lamp
@@ -64,8 +65,8 @@ export function getActorBusyCount(
 /**
  * Resolve an actor's scene pose. Started invocations are ground truth, then
  * explicit working activity (the plugin persists it per task — a bare
- * requested flag only means *pending*), then the just-finished success beat
- * (inside AWAKE_WINDOW_MS, succeeded/unknown only), then idle.
+ * requested flag only means *pending*), then an explicit success or error
+ * beat, then idle. Unknown outcomes produce no outcome pose.
  *
  * - Started work reads as working regardless of role.
  * - Requested work reads as pending (seat) only when the actor waits on a
@@ -78,39 +79,13 @@ export function getActorActivityPose(
   actor: ActorInfo,
   invocations: InvocationInfo[],
   now: number = Date.now()
-): "idle" | "seat" | "work" | "success" {
-  const related = invocations.filter(
+): "idle" | "seat" | "work" | "success" | "error" {
+  const resolvedBasePose = resolveActorBasePose(actor, invocations, now);
+  const hasActiveWork = invocations.some(
     (invocation) =>
       (invocation.executionStatus === "requested" || invocation.executionStatus === "started") &&
       (invocation.senderActorId === actor.actorId || invocation.recipientActorId === actor.actorId),
   );
-
-  // Started work is ground truth — it beats any flag.
-  if (related.some((inv) => inv.executionStatus === "started")) return "work";
-
-  // Explicit working activity beats a bare requested flag (pending ≠ working).
-  const activity =
-    actor.activity === "working" && now - actor.lastObservedAt > STALE_ACTIVITY_MS
-      ? "idle"
-      : actor.activity;
-  if (activity === "working") return "work";
-
-  // Pending on someone else: seated and waiting.
-  const waitingOnOther = related.some(
-    (inv) =>
-      inv.executionStatus === "requested" &&
-      inv.recipientActorId === actor.actorId &&
-      inv.senderActorId !== actor.actorId,
-  );
-  if (waitingOnOther) return "seat";
-  if (related.length > 0) return "work";
-
-  // Just-finished success beat: monitor stays ON, lamp stays lit.
-  const lastFinished = getActorLastFinishedAt(actor.actorId, invocations);
-  if (lastFinished != null && now - lastFinished < AWAKE_WINDOW_MS) {
-    const outcome = getActorLastOutcome(actor.actorId, invocations);
-    if (outcome === "succeeded" || outcome === "unknown") return "success";
-  }
-
-  return "idle";
+  if (hasActiveWork) return resolvedBasePose;
+  return resolveActorOutcomeBeat(actor.actorId, invocations, now)?.kind ?? resolvedBasePose;
 }

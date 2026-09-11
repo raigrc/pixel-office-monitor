@@ -108,7 +108,7 @@ function createFaceAtlas(): THREE.CanvasTexture {
   return texture;
 }
 
-const ASTRONAUT_VERTEX_SHADER = `
+export const ASTRONAUT_VERTEX_SHADER = `
   attribute vec3 aSuit;
   attribute float instanceFrame;
   attribute float instanceFace;
@@ -124,6 +124,9 @@ const ASTRONAUT_VERTEX_SHADER = `
   uniform float uSunIntensity;
   uniform vec3 uAmbientColor;
   uniform float uAmbientIntensity;
+  uniform vec3 uFillDirection;
+  uniform vec3 uFillColor;
+  uniform float uFillIntensity;
 
   void main() {
     vColor = aSuit;
@@ -136,9 +139,17 @@ const ASTRONAUT_VERTEX_SHADER = `
     float anim = sin(uTime * 2.0 + instanceFrame) * 0.05;
     pos.y += anim;
 
-    vec4 worldPos = modelMatrix * vec4(pos, 1.0);
+    // InstancedMesh path: every instance shares this shader, so the
+    // per-instance matrix must be applied exactly once. Without it all
+    // bodies collapse to the mesh origin while helmets/gear (standard
+    // materials) honor their instance matrices.
+    mat4 instanceTransform = mat4(1.0);
+    #ifdef USE_INSTANCING
+      instanceTransform = instanceMatrix;
+    #endif
+    vec4 worldPos = modelMatrix * instanceTransform * vec4(pos, 1.0);
     vWorldPosition = worldPos.xyz;
-    vNormal = normalize(mat3(modelMatrix) * normal);
+    vNormal = normalize(mat3(modelMatrix) * mat3(instanceTransform) * normal);
 
     gl_Position = projectionMatrix * viewMatrix * worldPos;
   }
@@ -156,6 +167,9 @@ const ASTRONAUT_FRAGMENT_SHADER = `
   uniform float uSunIntensity;
   uniform vec3 uAmbientColor;
   uniform float uAmbientIntensity;
+  uniform vec3 uFillDirection;
+  uniform vec3 uFillColor;
+  uniform float uFillIntensity;
 
   void main() {
     vec3 N = normalize(vNormal);
@@ -163,6 +177,11 @@ const ASTRONAUT_FRAGMENT_SHADER = `
     float NdotL = max(dot(N, L), 0.0);
 
     vec3 diffuse = vColor * uSunColor * NdotL * uSunIntensity;
+    // Cool night fill so bodies keep relief shading after sunset.
+    // Zero at full day; never fakes sunlight.
+    vec3 F = normalize(uFillDirection);
+    float NdotF = max(dot(N, F), 0.0);
+    diffuse += vColor * uFillColor * NdotF * uFillIntensity;
     vec3 ambient = vColor * uAmbientColor * uAmbientIntensity;
     vec3 color = ambient + diffuse;
 
@@ -200,6 +219,7 @@ export class Astronauts {
 
     this.createGeometries();
     this.createMeshes();
+    this.syncCounts();
   }
 
   private createGeometries(): void {
@@ -292,6 +312,9 @@ export class Astronauts {
         uSunIntensity: { value: 1 },
         uAmbientColor: { value: new THREE.Color(0x333344) },
         uAmbientIntensity: { value: 0.5 },
+        uFillDirection: { value: new THREE.Vector3(-0.5, 0.75, -0.25).normalize() },
+        uFillColor: { value: new THREE.Color(0x9db8e8) },
+        uFillIntensity: { value: 0 },
       },
     });
 
@@ -302,12 +325,17 @@ export class Astronauts {
     // Meshes created in createGeometries
   }
 
-  addAgent(agent: AstronautState): void {
-    if (this.agentCount >= this.maxAgents) return;
+  addAgent(agent: AstronautState): boolean {
+    if (this.agents.has(agent.id)) {
+      this.updateAgent(agent.id, agent);
+      return true;
+    }
+    if (this.agentCount >= this.maxAgents) return false;
     this.agents.set(agent.id, agent);
     this.updateInstance(agent);
     this.agentCount++;
     this.syncCounts();
+    return true;
   }
 
   removeAgent(id: string): void {
@@ -326,7 +354,10 @@ export class Astronauts {
   private updateInstance(agent: AstronautState): void {
     const index = Array.from(this.agents.keys()).indexOf(agent.id);
     if (index === -1) return;
+    this.writeInstanceAt(agent, index);
+  }
 
+  private writeInstanceAt(agent: AstronautState, index: number): void {
     this.dummy.position.copy(agent.position);
     this.dummy.rotation.y = Math.atan2(
       agent.target.x - agent.position.x,
@@ -369,13 +400,16 @@ export class Astronauts {
     this.hammerMesh.instanceMatrix.needsUpdate = true;
   }
 
+  /**
+   * Full survivor rewrite. Agent count caps at 64, so every surviving
+   * agent is rewritten to slot 0..count-1 after any removal. Index-diff
+   * bookkeeping cannot work here because updateInstance derives the slot
+   * from current Map order, which already shifted after the delete.
+   */
   private rebuildInstances(): void {
     let index = 0;
     for (const agent of this.agents.values()) {
-      const prevIndex = Array.from(this.agents.keys()).indexOf(agent.id);
-      if (prevIndex !== index) {
-        this.updateInstance(agent);
-      }
+      this.writeInstanceAt(agent, index);
       index++;
     }
     this.agentCount = this.agents.size;
@@ -393,13 +427,18 @@ export class Astronauts {
   }
 
   update(time: number, dt: number): void {
+    const frameArray = this.bodyMesh.geometry.getAttribute('instanceFrame') as THREE.InstancedBufferAttribute;
+    let index = 0;
     for (const agent of this.agents.values()) {
       agent.clipTime += dt;
       const clip = this.rig.clips.get(agent.clip);
       if (clip) {
         agent.frame = getClipFrame(this.rig, agent.clip, agent.clipTime);
       }
+      frameArray.setX(index, agent.frame);
+      index++;
     }
+    frameArray.needsUpdate = true;
   }
 
   setUniforms(uniforms: {
@@ -409,6 +448,9 @@ export class Astronauts {
     uSunIntensity?: number;
     uAmbientColor?: THREE.Color;
     uAmbientIntensity?: number;
+    uFillDirection?: THREE.Vector3;
+    uFillColor?: THREE.Color;
+    uFillIntensity?: number;
   }): void {
     if (uniforms.uTime !== undefined) this.material.uniforms.uTime.value = uniforms.uTime;
     if (uniforms.uSunDirection) this.material.uniforms.uSunDirection.value.copy(uniforms.uSunDirection);
@@ -416,6 +458,9 @@ export class Astronauts {
     if (uniforms.uSunIntensity !== undefined) this.material.uniforms.uSunIntensity.value = uniforms.uSunIntensity;
     if (uniforms.uAmbientColor) this.material.uniforms.uAmbientColor.value.copy(uniforms.uAmbientColor);
     if (uniforms.uAmbientIntensity !== undefined) this.material.uniforms.uAmbientIntensity.value = uniforms.uAmbientIntensity;
+    if (uniforms.uFillDirection) this.material.uniforms.uFillDirection.value.copy(uniforms.uFillDirection);
+    if (uniforms.uFillColor) this.material.uniforms.uFillColor.value.copy(uniforms.uFillColor);
+    if (uniforms.uFillIntensity !== undefined) this.material.uniforms.uFillIntensity.value = uniforms.uFillIntensity;
   }
 
   getMeshes(): THREE.InstancedMesh[] {

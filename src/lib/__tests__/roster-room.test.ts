@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { upsert, _clearStore, getSnapshot, getState, closeFloor, prune } from "@/lib/monitor-store";
-import { getActorActivityPose, getActorBusyCount, AWAKE_WINDOW_MS } from "@/lib/scene/actor-pose";
+import { getActorActivityPose, getActorBusyCount } from "@/lib/scene/actor-pose";
+import { ERROR_BEAT_MS, SUCCESS_BEAT_MS } from "@/lib/activity/activity-model";
 import { ROSTER_KEYS, ROSTER_SIZE, seatForAgent } from "@/lib/scene/roster";
 import type { ActorInfo } from "@/lib/monitor-types";
 
@@ -105,20 +106,20 @@ describe("roster room", () => {
     expect(getActorActivityPose(actor(a, "researcher", undefined), invs2)).toBe("seat");
   });
 
-  it("pose flows work -> success -> idle across the awake window", () => {
+  it("pose flows work -> success -> idle across the outcome beat", () => {
     const a = actor("actor-1", "researcher", "idle");
-    const finishedAt = Date.now() - 10_000;
+    const finishedAt = Date.now() - 1_000;
     const inv = {
       invocationId: "i", floorId: "f", senderActorId: "s", recipientActorId: "actor-1",
       callId: "c", parentInvocationId: null, revision: 1, executionStatus: "finished" as const,
       outcome: "succeeded" as const, taskCategory: null, promptPreview: null,
       requestedAt: finishedAt - 1000, startedAt: finishedAt - 500, finishedAt,
     };
-    expect(getActorActivityPose(a, [inv], finishedAt + 10_000)).toBe("success");
-    expect(getActorActivityPose(a, [inv], finishedAt + AWAKE_WINDOW_MS + 1000)).toBe("idle");
+    expect(getActorActivityPose(a, [inv], finishedAt + 1_000)).toBe("success");
+    expect(getActorActivityPose(a, [inv], finishedAt + SUCCESS_BEAT_MS)).toBe("idle");
   });
 
-  it("failed finish never celebrates", () => {
+  it("failed finish shows error, then returns idle", () => {
     const a = actor("actor-2", "researcher", "idle");
     const finishedAt = Date.now() - 1000;
     const inv = {
@@ -127,7 +128,44 @@ describe("roster room", () => {
       outcome: "failed" as const, taskCategory: null, promptPreview: null,
       requestedAt: finishedAt - 1000, startedAt: finishedAt - 500, finishedAt,
     };
-    expect(getActorActivityPose(a, [inv], finishedAt + 1000)).toBe("idle");
+    expect(getActorActivityPose(a, [inv], finishedAt + 1000)).toBe("error");
+    expect(getActorActivityPose(a, [inv], finishedAt + ERROR_BEAT_MS)).toBe("idle");
+  });
+
+  it("reconciles requested, started, and unknown finish into one truthful invocation", () => {
+    const detail = {
+      callId: "lifecycle-call",
+      agentKey: "researcher",
+      senderActorId: "proj:ses-root:orchestrator",
+      recipientActorId: "proj:ses-root:researcher",
+    };
+    upsert(v2Base({ eventId: "life-1", kind: "invocation.requested", detail }) as never);
+    upsert(v2Base({ eventId: "life-2", kind: "invocation.started", detail }) as never);
+    upsert(v2Base({ eventId: "life-3", kind: "invocation.finished", detail: { ...detail, outcome: "unknown" } }) as never);
+
+    const invocations = getSnapshot().invocations;
+    expect(invocations).toHaveLength(1);
+    expect(invocations[0]).toMatchObject({
+      callId: "lifecycle-call",
+      executionStatus: "finished",
+      outcome: "unknown",
+      senderActorId: "proj:ses-root:orchestrator",
+      recipientActorId: "proj:ses-root:researcher",
+    });
+    expect(getActorActivityPose(actor("proj:ses-root:researcher", "researcher", "idle"), invocations)).toBe("idle");
+  });
+
+  it("preserves unknown delegation endpoints as null", () => {
+    upsert(v2Base({
+      eventId: "unknown-endpoint",
+      kind: "invocation.requested",
+      detail: { callId: "unknown-call", agentKey: "researcher" },
+    }) as never);
+
+    expect(getSnapshot().invocations[0]).toMatchObject({
+      senderActorId: null,
+      recipientActorId: null,
+    });
   });
 
   it("unknown future keys share the visitor desk, never a roster seat", () => {

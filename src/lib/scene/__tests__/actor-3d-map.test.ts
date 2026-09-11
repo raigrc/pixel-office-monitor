@@ -1,24 +1,11 @@
 import { describe, it, expect } from 'vitest';
 import * as THREE from 'three';
-import type { ActorInfo, FloorInfo, InvocationInfo } from '../../monitor-types';
+import type { ActorInfo, InvocationInfo } from '../../monitor-types';
 import {
   mapActorsToAgents,
   mapPoseToClipBadge,
-  layoutFloorPositions,
 } from '../actor-3d-map';
-
-function floor(id: string): FloorInfo {
-  return {
-    floorId: id,
-    rootSessionId: `root-${id}`,
-    projectId: 'proj',
-    title: id,
-    createdAt: 0,
-    updatedAt: 0,
-    closed: false,
-    sessionId: `ses-${id}`,
-  };
-}
+import { hexToWorld } from '../hex-grid';
 
 function actor(id: string, floorId: string, overrides: Partial<ActorInfo> = {}): ActorInfo {
   return {
@@ -36,6 +23,10 @@ function actor(id: string, floorId: string, overrides: Partial<ActorInfo> = {}):
   };
 }
 
+function positionsFor(floorId: string): Map<string, THREE.Vector3> {
+  return new Map([[floorId, hexToWorld(0, 0)]]);
+}
+
 describe('mapPoseToClipBadge', () => {
   it('maps work, seat, success, idle to valid clip and badge values', () => {
     expect(mapPoseToClipBadge('work')).toEqual({ clip: 'work', badge: 'working', working: true });
@@ -45,25 +36,9 @@ describe('mapPoseToClipBadge', () => {
   });
 });
 
-describe('layoutFloorPositions', () => {
-  it('assigns distinct hex positions per floor', () => {
-    const positions = layoutFloorPositions([floor('f1'), floor('f2')], null);
-    expect(positions.size).toBe(2);
-    const p1 = positions.get('f1')!;
-    const p2 = positions.get('f2')!;
-    expect(p1).toBeInstanceOf(THREE.Vector3);
-    expect(p1.distanceTo(p2)).toBeGreaterThan(0);
-  });
-
-  it('returns an empty map for no floors', () => {
-    expect(layoutFloorPositions([], null).size).toBe(0);
-  });
-});
-
 describe('mapActorsToAgents', () => {
   it('maps called actors to agent states near their floor position', () => {
-    const floors = [floor('f1')];
-    const positions = layoutFloorPositions(floors, null);
+    const positions = positionsFor('f1');
     const actors = [
       actor('a1', 'f1', { seatIndex: 0 }),
       actor('a2', 'f1', { seatIndex: 3, activity: 'working', lastObservedAt: Date.now() }),
@@ -80,13 +55,13 @@ describe('mapActorsToAgents', () => {
   });
 
   it('keeps idle roster filler out of the colony', () => {
-    const positions = layoutFloorPositions([floor('f1')], null);
+    const positions = positionsFor('f1');
     const actors = [actor('sleeper', 'f1', { activity: 'idle' })];
     expect(mapActorsToAgents(actors, [], positions)).toEqual([]);
   });
 
   it('skips system actors and actors on unknown floors', () => {
-    const positions = layoutFloorPositions([floor('f1')], null);
+    const positions = positionsFor('f1');
     const actors = [
       actor('sys', 'f1', { role: 'system' }),
       actor('ghost', 'missing-floor', {}),

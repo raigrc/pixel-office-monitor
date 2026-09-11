@@ -108,12 +108,12 @@ describe('Astronauts', () => {
     astronauts?.dispose();
   });
 
-  it('should create 7 instanced meshes', () => {
+  it('should create 7 empty instanced meshes', () => {
     const meshes = astronauts.getMeshes();
     expect(meshes.length).toBe(7);
     for (const mesh of meshes) {
       expect(mesh).toBeInstanceOf(THREE.InstancedMesh);
-      expect(mesh.count).toBe(16);
+      expect(mesh.count).toBe(0);
     }
   });
 
@@ -217,5 +217,131 @@ describe('Animation utilities', () => {
   it('should return identity for invalid clip', () => {
     const mat = getBoneMatrix(rig, 'nonexistent', 0, 0);
     expect(mat.determinant()).toBe(1);
+  });
+});
+
+describe('Astronauts compaction (1.1D)', () => {
+  let rig: CrewRig;
+
+  beforeAll(() => {
+    rig = createCrewRig();
+  });
+
+  function makeAgent(id: string, x: number, color: number, face: number): AstronautState {
+    return {
+      id,
+      position: new THREE.Vector3(x, 0.6, 0),
+      target: new THREE.Vector3(x, 0.6, 0),
+      clip: 'idle',
+      clipTime: 0,
+      frame: 0,
+      suitColor: new THREE.Color(color),
+      faceIndex: face,
+      badge: 'none',
+      working: false,
+    };
+  }
+
+  function makeTrio(): Astronauts {
+    const crew = createAstronauts({ maxAgents: 8, rig });
+    crew.addAgent(makeAgent('a', 0, 0xff0000, 1));
+    crew.addAgent(makeAgent('b', 5, 0x00ff00, 2));
+    crew.addAgent(makeAgent('c', -5, 0x0000ff, 3));
+    return crew;
+  }
+
+  function translationOf(mesh: THREE.InstancedMesh, index: number): THREE.Vector3 {
+    const m = new THREE.Matrix4();
+    mesh.getMatrixAt(index, m);
+    return new THREE.Vector3().setFromMatrixPosition(m);
+  }
+
+  function expectCloseTo(actual: THREE.Vector3, expected: THREE.Vector3): void {
+    expect(actual.x).toBeCloseTo(expected.x, 5);
+    expect(actual.y).toBeCloseTo(expected.y, 5);
+    expect(actual.z).toBeCloseTo(expected.z, 5);
+  }
+
+  function expectSurvivors(
+    crew: Astronauts,
+    expected: { id: string; x: number; color: number; face: number }[],
+  ): void {
+    expect(crew.getAgentCount()).toBe(expected.length);
+    const meshes = crew.getMeshes();
+    expect(meshes.length).toBe(7);
+    const body = meshes[0];
+    const suit = body.geometry.getAttribute('aSuit') as THREE.InstancedBufferAttribute;
+    const faceAttr = body.geometry.getAttribute('instanceFace') as THREE.InstancedBufferAttribute;
+    expected.forEach((want, slot) => {
+      expect(crew.getAgent(want.id)).toBeDefined();
+      const expectedPos = new THREE.Vector3(want.x, 0.6, 0);
+      for (const mesh of meshes) {
+        expect(mesh.count).toBe(expected.length);
+        expectCloseTo(translationOf(mesh, slot), expectedPos);
+      }
+      const color = new THREE.Color(want.color);
+      expect(suit.getX(slot)).toBeCloseTo(color.r, 5);
+      expect(suit.getY(slot)).toBeCloseTo(color.g, 5);
+      expect(suit.getZ(slot)).toBeCloseTo(color.b, 5);
+      expect(faceAttr.getX(slot)).toBe(want.face);
+    });
+  }
+
+  it('rewrites survivors after removing the first agent', () => {
+    const crew = makeTrio();
+    crew.removeAgent('a');
+    expectSurvivors(crew, [
+      { id: 'b', x: 5, color: 0x00ff00, face: 2 },
+      { id: 'c', x: -5, color: 0x0000ff, face: 3 },
+    ]);
+    crew.dispose();
+  });
+
+  it('rewrites survivors after removing the middle agent', () => {
+    const crew = makeTrio();
+    crew.removeAgent('b');
+    expectSurvivors(crew, [
+      { id: 'a', x: 0, color: 0xff0000, face: 1 },
+      { id: 'c', x: -5, color: 0x0000ff, face: 3 },
+    ]);
+    crew.dispose();
+  });
+
+  it('keeps survivors in place after removing the last agent', () => {
+    const crew = makeTrio();
+    crew.removeAgent('c');
+    expectSurvivors(crew, [
+      { id: 'a', x: 0, color: 0xff0000, face: 1 },
+      { id: 'b', x: 5, color: 0x00ff00, face: 2 },
+    ]);
+    crew.dispose();
+  });
+
+  it('uploads animation frames to the rendered instance attribute', () => {
+    const crew = createAstronauts({ maxAgents: 1, rig });
+    const subject = makeAgent('animated', 0, 0xffffff, 0);
+    subject.clip = 'walk';
+    crew.addAgent(subject);
+    const elapsed = rig.clips.get('walk')!.duration * 0.5;
+
+    crew.update(0, elapsed);
+
+    const frame = crew.getAgent('animated')!.frame;
+    const attr = crew.getMeshes()[0].geometry.getAttribute('instanceFrame') as THREE.InstancedBufferAttribute;
+    expect(frame).toBeGreaterThan(0);
+    expect(attr.getX(0)).toBe(frame);
+    crew.dispose();
+  });
+
+  it('reports capacity rejection and accepts the agent after a slot frees', () => {
+    const crew = createAstronauts({ maxAgents: 1, rig });
+    expect(crew.addAgent(makeAgent('a', 0, 0xffffff, 0))).toBe(true);
+    expect(crew.addAgent(makeAgent('b', 1, 0xffffff, 0))).toBe(false);
+
+    crew.removeAgent('a');
+
+    expect(crew.addAgent(makeAgent('b', 1, 0xffffff, 0))).toBe(true);
+    expect(crew.getAgent('b')).toBeDefined();
+    crew.dispose();
   });
 });

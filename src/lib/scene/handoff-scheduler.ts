@@ -1,5 +1,6 @@
 import { Point, getRoute, getDeskAnchor, ORCHESTRATOR_SPOT } from "./office-layout";
 import type { ActorInfo, InvocationInfo, FloorInfo } from "@/lib/monitor-types";
+import type { ActivityActor, DirectDelegation } from "@/lib/activity/activity-model";
 
 export type HandoffPhase =
   | "queued"
@@ -23,6 +24,7 @@ export interface HandoffJob {
   startedAt: number | null;
   phaseStartedAt: number | null;
   senderStartPos: Point;
+  senderHomePos: Point;
   senderTargetPos: Point;
   route: Point[];
   routeIndex: number;
@@ -49,7 +51,10 @@ export class HandoffScheduler {
   private lastProcessedTime: number = 0;
   private maxVisualBacklog = 8;
 
-  constructor(private getActors: () => ActorInfo[], private getFloors: () => FloorInfo[]) {}
+  constructor(
+    private getActors: () => ActorInfo[] = () => [],
+    private getFloors: () => FloorInfo[] = () => [],
+  ) {}
 
   enqueue(invocation: InvocationInfo, senderActor: ActorInfo, recipientActor: ActorInfo): HandoffJob | null {
     if (this.seenInvocationIds.has(invocation.invocationId)) {
@@ -81,6 +86,7 @@ export class HandoffScheduler {
       startedAt: null,
       phaseStartedAt: null,
       senderStartPos: { ...senderDesk },
+      senderHomePos: { ...senderDesk },
       senderTargetPos: { ...recipientHandoff },
       route,
       routeIndex: 0,
@@ -93,6 +99,46 @@ export class HandoffScheduler {
     this.senderQueues.set(senderActor.actorId, senderQueue);
 
     return job;
+  }
+
+  reconcile(relations: readonly DirectDelegation[], activityActors: readonly ActivityActor[]): void {
+    const actors = new Map(activityActors.map((entry) => [entry.actor.actorId, entry.actor]));
+    const activeIds = new Set(relations.map((relation) => relation.invocationId));
+    for (const job of this.jobs.values()) {
+      if (!activeIds.has(job.invocationId)) this.cancel(job.jobId);
+    }
+    for (const relation of relations) {
+      const sender = actors.get(relation.senderActorId);
+      const recipient = actors.get(relation.recipientActorId);
+      if (!sender || !recipient) continue;
+      const invocation: InvocationInfo = {
+        invocationId: relation.invocationId,
+        floorId: relation.floorId,
+        senderActorId: relation.senderActorId,
+        recipientActorId: relation.recipientActorId,
+        callId: relation.invocationId,
+        parentInvocationId: relation.parentInvocationId,
+        revision: 0,
+        executionStatus: relation.lifecycle,
+        outcome: null,
+        taskCategory: null,
+        promptPreview: null,
+        requestedAt: relation.requestedAt,
+        startedAt: null,
+        finishedAt: null,
+      };
+      this.enqueue(invocation, sender, recipient);
+    }
+  }
+
+  private cancel(jobId: string): void {
+    const job = this.jobs.get(jobId);
+    if (!job) return;
+    this.jobs.delete(jobId);
+    const queue = this.senderQueues.get(job.senderActorId);
+    if (!queue) return;
+    const index = queue.indexOf(jobId);
+    if (index >= 0) queue.splice(index, 1);
   }
 
   process(deltaTime: number): HandoffJob[] {
@@ -195,9 +241,7 @@ export class HandoffScheduler {
   }
 
   private returnAlongRoute(job: HandoffJob, deltaTime: number): number {
-    const senderDesk = job.senderActorId.includes("orchestrator")
-      ? { ...ORCHESTRATOR_SPOT }
-      : this.getDeskAnchorForActor(job.senderActorId).seatedActorAnchor;
+    const senderDesk = job.senderHomePos;
 
     const dx = senderDesk.x - job.senderStartPos.x;
     const dy = senderDesk.y - job.senderStartPos.y;

@@ -7,7 +7,7 @@ import { SMAAPass } from 'three/addons/postprocessing/SMAAPass.js';
 import { ThreeCamera, CameraState } from './three-camera';
 import { ThreeSky, SkyConfig, SkyPreset } from './three-sky';
 import { createTerrainGeometry, createTerrainMaterial, TerrainConfig, PlanetPreset } from './terrain';
-import { createScatterMesh, rebuildScatter, ScatterConfig } from './scatter';
+import { createScatterMesh, getScatterObstacles, rebuildScatter, ScatterConfig } from './scatter';
 import { createShip, ShipConfig, Ship } from './ship';
 import { createBuildingGeometry } from './buildings';
 import { createAstronauts, Astronauts, AstronautState } from './astronauts';
@@ -15,9 +15,20 @@ import { createCrewRig } from './crew-rig';
 import { createBadges } from './indicators';
 import type { BadgeType } from './indicators';
 import { createParticleSystem } from './particles';
-import { stepToward, WALK_SPEED, LEAVE_SPEED } from './walkers';
-import { HexCell, hexToKey, HEX_SIZE, DECK_TOP } from './hex-grid';
+import {
+  AgentMotionController,
+  workSiteForAgent,
+  type MotionAgentView,
+  type MotionDelta,
+  type MotionEnvironment,
+} from './walkers';
+import { clearGrid, createNavGrid, rasterizeBuilding, rasterizeCircle, rasterizeShip, type NavGrid } from './navigation';
+import { HexCell, hexToKey, getNeighbors, DECK_TOP } from './hex-grid';
 import { Colony } from './colony';
+import { suitColorFor } from './actor-3d-map';
+import type { WorldAgent, WorldState } from '../world/world-types';
+import type { ActivityModel } from '../activity/activity-model';
+import { Delegations3D } from './delegations-3d';
 
 export interface ThreeEngineConfig {
   enableBloom?: boolean;
@@ -46,6 +57,18 @@ function safeAspect(w: number, h: number): number {
   return w / h;
 }
 
+/** Session plot deck radius. Holds the worksite plus the agent ring. */
+const SESSION_DECK_RADIUS = 3.6;
+/** Scatter density after the Phase 1 declutter (was 0.12). */
+const SCATTER_DENSITY = 0.03;
+/** Distance needed to fit a ground radius in current vertical/horizontal FOV. */
+export function framingDistance(radius: number, camera: THREE.PerspectiveCamera): number {
+  const verticalFov = THREE.MathUtils.degToRad(camera.fov);
+  const horizontalFov = 2 * Math.atan(Math.tan(verticalFov / 2) * camera.aspect);
+  const limitingFov = Math.min(verticalFov, horizontalFov);
+  return THREE.MathUtils.clamp(radius / Math.sin(limitingFov / 2), 12, 70);
+}
+
 export class ThreeEngine {
   private renderer: THREE.WebGLRenderer | null = null;
   private camera: THREE.PerspectiveCamera | null = null;
@@ -53,7 +76,6 @@ export class ThreeEngine {
   private container: HTMLElement | null = null;
   private animationId: number | null = null;
   private mounted = false;
-  private currentViewMode: '2d' | '3d' = '2d';
 
   private composer: EffectComposer | null = null;
   private bloomPass: UnrealBloomPass | null = null;
@@ -68,16 +90,29 @@ export class ThreeEngine {
   private scatter: THREE.Mesh | null = null;
   private ship: Ship | null = null;
   private buildings: Map<string, THREE.Mesh> = new Map();
+  private buildingFootprints = new Map<string, number>();
   private decks: Map<string, THREE.Mesh> = new Map();
   private astronauts: Astronauts | null = null;
   private badges: ReturnType<typeof createBadges> | null = null;
   private particles: ReturnType<typeof createParticleSystem> | null = null;
+  private delegations: Delegations3D | null = null;
   private agents: Map<string, AstronautState> = new Map();
+  private orchestratorRings: Map<string, THREE.Mesh> = new Map();
+  private ringGeometry: THREE.TorusGeometry | null = null;
+  private ringMaterial: THREE.MeshBasicMaterial | null = null;
+  private lastFramedSessionsKey = '';
   private populated = false;
   private colony = new Colony();
+  private motion = new AgentMotionController();
+  private navGrid: NavGrid = createNavGrid();
+  private motionEnvironment: MotionEnvironment | null = null;
+  private motionEnvironmentKey = '';
+  private motionEnvironmentRevision = 0;
+  private reducedMotion = false;
+  private activity: ActivityModel | null = null;
+  private raycaster = new THREE.Raycaster();
+  private pointer = new THREE.Vector2();
   private lastScatterKeys = new Set<string>();
-  private leaving = new Set<string>();
-  private baseClips = new Map<string, string>();
   private prevBadges = new Map<string, string>();
   private emitTimers = new Map<string, number>();
 
@@ -238,10 +273,10 @@ export class ThreeEngine {
   private rebuildComposer(): void {
     if (!this.renderer || !this.scene || !this.camera || !this.container || !this.composer) return;
 
-    this.composer.passes.forEach((pass) => {
-      if (pass.dispose) pass.dispose();
-    });
-
+    // disposeComposer() frees passes plus the composer's own render
+    // targets before a fresh composer is built. Disposing passes alone
+    // would orphan the old targets on every bloom/SMAA toggle.
+    this.disposeComposer();
     this.initComposer();
   }
 
@@ -308,7 +343,7 @@ export class ThreeEngine {
     }
 
     this.threeCamera.update(dt);
-    // Sky wants epoch millis. performance.now() reads as 1970 night.
+    // Sky wants epoch millis. performance.now() would freeze it near 1970.
     this.threeSky.update(Date.now());
     this.update(now, dt);
 
@@ -368,21 +403,8 @@ export class ThreeEngine {
     this.updateComposerSize();
   }
 
-  setViewMode(mode: '2d' | '3d'): void {
-    this.currentViewMode = mode;
-  }
-
-  getViewMode(): '2d' | '3d' {
-    return this.currentViewMode;
-  }
-
   isMounted(): boolean {
     return this.mounted && this.scene !== null;
-  }
-
-  /** World position of each known plot, active and fallow. */
-  getFloorPositions(): Map<string, THREE.Vector3> {
-    return this.colony.positions();
   }
 
   getCamera(): THREE.PerspectiveCamera | null {
@@ -440,6 +462,9 @@ export class ThreeEngine {
     for (const mesh of this.astronauts.getMeshes()) {
       this.scene.add(mesh);
     }
+    this.delegations = new Delegations3D(this.scene);
+    this.delegations.setReducedMotion(this.reducedMotion);
+    if (this.activity) this.delegations.reconcile(this.activity.directDelegations);
   }
 
   private createTerrain(): void {
@@ -459,7 +484,7 @@ export class ThreeEngine {
     if (!this.scene) return;
     const config: ScatterConfig = {
       halfExtent: 56,
-      density: 0.12,
+      density: SCATTER_DENSITY,
       planetPreset: 'terra',
     };
     const occupiedCells = new Map<string, HexCell>();
@@ -468,20 +493,119 @@ export class ThreeEngine {
     this.lastScatterKeys = new Set();
   }
 
-  /** Rebuild scatter when the plot footprint changes so rocks miss decks. */
-  private syncScatterFootprint(): void {
+  /**
+   * One atomic world sync. Static terrain, ship, and rigs stay mounted.
+   * Active session plots, worksites, agents, and orchestrator markers
+   * reconcile by stable id. Missing ids leave and dispose.
+   */
+  syncWorld(world: WorldState): void {
+    if (!this.scene) return;
+    const sessionIds = world.sessions.map((s) => s.id);
+    this.syncPlots(sessionIds);
+    const environment = this.buildMotionEnvironment(world.agents);
+    this.applyMotionDelta(this.motion.reconcile(world.agents, environment, {
+      activeWorldIds: new Set(sessionIds),
+    }));
+    this.syncOrchestratorMarkers(this.motion.snapshot());
+    this.frameSessions(sessionIds);
+  }
+
+  syncActivity(activity: ActivityModel): void {
+    this.activity = activity;
+    this.delegations?.reconcile(activity.directDelegations);
+  }
+
+  setReducedMotion(enabled: boolean): void {
+    this.reducedMotion = enabled;
+    this.threeCamera?.setReducedMotion(enabled);
+    this.delegations?.setReducedMotion(enabled);
+    if (enabled) this.particles?.clear();
+    this.applyMotionDelta(this.motion.setReducedMotion(enabled));
+  }
+
+  /** Focus one session plot. Keeps the worksite prominent. */
+  focusSession(sessionId: string, distance?: number): void {
+    const pos = this.colony.positionOf(sessionId);
+    if (pos) {
+      this.focusCamera(pos, distance ?? (this.camera ? framingDistance(SESSION_DECK_RADIUS, this.camera) : 14));
+    }
+  }
+
+  /** Frame every active plot. Used when more than one session is live. */
+  frameWorld(): void {
+    const positions: THREE.Vector3[] = [];
+    for (const id of this.colony.activeIds()) {
+      const pos = this.colony.positionOf(id);
+      if (pos) positions.push(pos);
+    }
+    if (positions.length === 0) {
+      this.focusCamera(new THREE.Vector3(0, 0, 0), 30);
+      return;
+    }
+    const centroid = positions
+      .reduce((acc, p) => acc.add(p.clone()), new THREE.Vector3())
+      .multiplyScalar(1 / positions.length);
+    let spread = 0;
+    for (const p of positions) spread = Math.max(spread, p.distanceTo(centroid));
+    const radius = spread + SESSION_DECK_RADIUS;
+    this.focusCamera(
+      centroid,
+      this.camera ? framingDistance(radius, this.camera) : THREE.MathUtils.clamp(12 + spread * 1.2, 16, 60),
+    );
+  }
+
+  /** Frame only when the session set changes. Agent updates never steal the camera. */
+  private frameSessions(sessionIds: string[]): void {
+    const key = [...sessionIds].sort().join(',');
+    if (key === this.lastFramedSessionsKey) return;
+    const hadWorld = this.lastFramedSessionsKey !== '';
+    this.lastFramedSessionsKey = key;
+    if (hadWorld && this.threeCamera?.hasUserInteracted()) return;
+    if (sessionIds.length === 0) {
+      this.focusCamera(new THREE.Vector3(0, 0, 0), 30);
+    } else if (sessionIds.length === 1) {
+      this.focusSession(sessionIds[0]);
+    } else {
+      this.frameWorld();
+    }
+  }
+
+  private clipBadgeFor(status: WorldAgent['status']): { clip: string; badge: string; working: boolean } {
+    switch (status) {
+      case 'working':
+        return { clip: 'work', badge: 'working', working: true };
+      case 'waiting':
+        return { clip: 'sitIdle', badge: 'waiting', working: false };
+      case 'success':
+        return { clip: 'cheer', badge: 'celebrating', working: false };
+      case 'error':
+        return { clip: 'sitIdle', badge: 'blocked', working: false };
+      case 'idle':
+        return { clip: 'sitIdle', badge: 'none', working: false };
+    }
+  }
+
+  /** Rebuild scatter when the active plot footprint changes so rocks miss decks. */
+  private syncScatterFootprint(activeIds: Set<string>): void {
     if (!this.scene || !this.scatter) return;
-    const keys = this.colony.occupiedKeys();
-    if (sameKeys(keys, this.lastScatterKeys)) return;
-    this.lastScatterKeys = keys;
     const cells = new Map<string, HexCell>();
     for (const plot of this.colony.plotsList()) {
-      for (const cell of plot.cells) cells.set(hexToKey(cell.q, cell.r), cell);
+      if (!activeIds.has(plot.floorId)) continue;
+      for (const cell of plot.cells) {
+        cells.set(hexToKey(cell.q, cell.r), cell);
+        for (const neighbor of getNeighbors(cell)) {
+          const key = hexToKey(neighbor.q, neighbor.r);
+          if (!cells.has(key)) cells.set(key, { q: neighbor.q, r: neighbor.r });
+        }
+      }
     }
+    const keys = new Set(cells.keys());
+    if (sameKeys(keys, this.lastScatterKeys)) return;
+    this.lastScatterKeys = keys;
     this.scene.remove(this.scatter);
     this.scatter = rebuildScatter(
       this.scatter,
-      { halfExtent: 56, density: 0.12, planetPreset: 'terra' },
+      { halfExtent: 56, density: SCATTER_DENSITY, planetPreset: 'terra' },
       cells,
       this.shipPosition(),
       this.shipRadius()
@@ -498,42 +622,41 @@ export class ThreeEngine {
     this.scene?.add(this.ship.getGroup());
   }
 
-  setFloors(floorIds: string[]): void {
+  /** Active plots only. Fallow Colony records keep their ground for return visits. */
+  private syncPlots(sessionIds: string[]): void {
     if (!this.scene) return;
 
-    this.colony.reconcile(floorIds);
-    const plots = new Map(this.colony.plotsList().map((p) => [p.floorId, p]));
+    this.colony.reconcile(sessionIds);
+    const active = new Set(this.colony.activeIds());
 
-    for (const plot of plots.values()) {
-      const pos = this.colony.positionOf(plot.floorId);
+    for (const floorId of active) {
+      const pos = this.colony.positionOf(floorId);
       if (!pos) continue;
-      const accent = accentFor(plot.floorId);
-      // Fallow plots keep their ground, dimmed.
-      const tone = plot.status === 'fallow' ? 0.4 : 1;
+      const accent = accentFor(floorId);
 
-      let deck = this.decks.get(plot.floorId);
+      let deck = this.decks.get(floorId);
       if (!deck) {
-        const deckGeo = new THREE.CylinderGeometry(HEX_SIZE * 1.12, HEX_SIZE * 1.12, DECK_TOP, 6);
+        const deckGeo = new THREE.CylinderGeometry(SESSION_DECK_RADIUS, SESSION_DECK_RADIUS, DECK_TOP, 6);
         // Base at y=0, top face exactly at DECK_TOP.
         deckGeo.translate(0, DECK_TOP / 2, 0);
         const deckMat = new THREE.MeshStandardMaterial({ roughness: 0.85, metalness: 0.15 });
         deck = new THREE.Mesh(deckGeo, deckMat);
         deck.receiveShadow = true;
         this.scene.add(deck);
-        this.decks.set(plot.floorId, deck);
+        this.decks.set(floorId, deck);
       }
       deck.position.set(pos.x, 0, pos.z);
-      (deck.material as THREE.MeshStandardMaterial).color.copy(accent).multiplyScalar(0.35 * tone);
+      (deck.material as THREE.MeshStandardMaterial).color.copy(accent).multiplyScalar(0.35);
 
-      const existing = this.buildings.get(plot.floorId);
+      const existing = this.buildings.get(floorId);
       if (existing) {
         existing.position.set(pos.x, DECK_TOP, pos.z);
-        (existing.material as THREE.MeshStandardMaterial).color.copy(accent).multiplyScalar(tone);
+        (existing.material as THREE.MeshStandardMaterial).color.copy(accent);
         continue;
       }
 
-      const { geometry } = createBuildingGeometry(plot.floorId);
-      const material = new THREE.MeshStandardMaterial({ color: accent.clone().multiplyScalar(tone) });
+      const { geometry, recipe } = createBuildingGeometry(floorId);
+      const material = new THREE.MeshStandardMaterial({ color: accent.clone() });
       const mesh = new THREE.Mesh(geometry, material);
       // Footprints run larger than plots. A uniform 0.6 keeps roofs on decks.
       mesh.scale.setScalar(0.6);
@@ -541,11 +664,12 @@ export class ThreeEngine {
       mesh.castShadow = true;
       mesh.receiveShadow = true;
       this.scene.add(mesh);
-      this.buildings.set(plot.floorId, mesh);
+      this.buildings.set(floorId, mesh);
+      this.buildingFootprints.set(floorId, recipe.footprintRadius * 0.6);
     }
 
     for (const [id, mesh] of this.buildings) {
-      if (!plots.has(id)) {
+      if (!active.has(id)) {
         this.scene?.remove(mesh);
         mesh.geometry.dispose();
         if (Array.isArray(mesh.material)) {
@@ -554,11 +678,12 @@ export class ThreeEngine {
           mesh.material.dispose();
         }
         this.buildings.delete(id);
+        this.buildingFootprints.delete(id);
       }
     }
 
     for (const [id, deck] of this.decks) {
-      if (!plots.has(id)) {
+      if (!active.has(id)) {
         this.scene?.remove(deck);
         deck.geometry.dispose();
         if (Array.isArray(deck.material)) {
@@ -570,44 +695,133 @@ export class ThreeEngine {
       }
     }
 
-    this.syncScatterFootprint();
+    this.syncScatterFootprint(active);
   }
 
-  setAgents(agentStates: AstronautState[]): void {
-    if (!this.astronauts) return;
+  private buildMotionEnvironment(worldAgents: readonly WorldAgent[]): MotionEnvironment {
+    if (!this.ship) throw new Error('Ship must exist before world sync');
+    const activeIds = this.colony.activeIds().sort();
+    const key = activeIds.map((id) => {
+      const position = this.colony.positionOf(id);
+      return `${id}:${position?.x ?? 0}:${position?.z ?? 0}:${this.buildingFootprints.get(id) ?? 0}`;
+    }).join('|');
+    if (key !== this.motionEnvironmentKey) {
+      this.motionEnvironmentKey = key;
+      this.motionEnvironmentRevision++;
+      clearGrid(this.navGrid);
+      for (const id of activeIds) {
+        const position = this.colony.positionOf(id);
+        if (!position) continue;
+        rasterizeBuilding(this.navGrid, position, this.buildingFootprints.get(id) ?? 1.5);
+      }
+      for (const obstacle of getScatterObstacles(this.scatter)) {
+        rasterizeCircle(this.navGrid, obstacle.position.x, obstacle.position.z, obstacle.radius);
+      }
+      rasterizeShip(this.navGrid, this.shipPosition(), 4.5);
+    }
 
-    const currentIds = new Set(agentStates.map((a) => a.id));
-    for (const [id, agent] of this.agents) {
-      if (!currentIds.has(id) && !this.leaving.has(id) && this.ship) {
-        // Walk back to the ship before unmounting.
-        this.leaving.add(id);
-        agent.target.copy(this.ship.getRampBottom());
+    const sites = new Map<string, THREE.Vector3>();
+    for (const agent of worldAgents) {
+      const home = this.colony.positionOf(agent.worldId);
+      if (!home) continue;
+      home.y = DECK_TOP;
+      sites.set(
+        agent.id,
+        workSiteForAgent(home, agent, this.buildingFootprints.get(agent.worldId) ?? 1.5),
+      );
+    }
+    this.motionEnvironment = {
+      revision: this.motionEnvironmentRevision,
+      grid: this.navGrid,
+      sites,
+      ship: this.ship.getTransit(),
+    };
+    return this.motionEnvironment;
+  }
+
+  private applyMotionDelta(delta: MotionDelta): void {
+    if (!this.astronauts) return;
+    for (const view of delta.upserted) {
+      const semantic = this.clipBadgeFor(view.agent.status);
+      const moving = view.phase !== 'onsite';
+      const clip = moving ? 'walk' : semantic.clip;
+      const badge = view.phase === 'entering' ? 'spawn' : view.phase === 'leaving' ? 'leave' : semantic.badge;
+      const live = this.agents.get(view.agent.id);
+      if (!live) {
+        const state: AstronautState = {
+          id: view.agent.id,
+          position: view.position.clone(),
+          target: view.target.clone(),
+          clip,
+          clipTime: 0,
+          frame: 0,
+          suitColor: suitColorFor(view.agent.agentKey),
+          faceIndex: Math.abs(view.agent.seatIndex) % 16,
+          badge,
+          working: !moving && semantic.working,
+        };
+        if (!this.astronauts.addAgent(state)) continue;
+        this.agents.set(view.agent.id, state);
+      } else {
+        live.target.copy(view.target);
+        live.position.copy(view.position);
+        live.clip = clip;
+        live.badge = badge;
+        live.working = !moving && semantic.working;
+        live.suitColor.copy(suitColorFor(view.agent.agentKey));
+        live.faceIndex = Math.abs(view.agent.seatIndex) % 16;
+        this.astronauts.updateAgent(view.agent.id, live);
       }
     }
 
-    const spawn = this.ship?.getRampBottom().clone() ?? new THREE.Vector3();
-    for (const state of agentStates) {
-      const live = this.agents.get(state.id);
-      if (!live) {
-        this.leaving.delete(state.id);
-        const spawned: AstronautState = {
-          ...state,
-          position: spawn.clone(),
-          target: state.position.clone(),
-        };
-        this.baseClips.set(state.id, state.clip);
-        this.agents.set(state.id, spawned);
-        this.astronauts.addAgent(spawned);
-        this.particles?.emit('dust', spawn, 6);
-      } else {
-        live.target.copy(state.position);
-        live.clip = state.clip;
-        live.badge = state.badge;
-        live.working = state.working;
-        live.suitColor = state.suitColor;
-        live.faceIndex = state.faceIndex;
-        this.baseClips.set(state.id, state.clip);
-        this.astronauts.updateAgent(state.id, live);
+    for (const id of delta.removedIds) {
+      this.astronauts.removeAgent(id);
+      this.badges?.clearBadge(id);
+      this.agents.delete(id);
+      this.prevBadges.delete(id);
+      this.emitTimers.delete(id);
+    }
+
+    if (!this.reducedMotion) {
+      for (const event of delta.events) {
+        const position = this.agents.get(event.agentId)?.position;
+        if (!position) continue;
+        if (event.type === 'spawned' || event.type === 'arrived') {
+          this.particles?.emit('dust', position, 6);
+        }
+      }
+    }
+  }
+
+  private ringAssets(): { geometry: THREE.TorusGeometry; material: THREE.MeshBasicMaterial } {
+    if (!this.ringGeometry) this.ringGeometry = new THREE.TorusGeometry(0.55, 0.06, 8, 32);
+    if (!this.ringMaterial) this.ringMaterial = new THREE.MeshBasicMaterial({ color: 0xffc86a });
+    return { geometry: this.ringGeometry, material: this.ringMaterial };
+  }
+
+  /** One subtle floating ring per orchestrator. Same size as every agent. */
+  private syncOrchestratorMarkers(runtimeAgents: readonly MotionAgentView[]): void {
+    if (!this.scene) return;
+    const seen = new Set<string>();
+    for (const runtime of runtimeAgents) {
+      const agent = runtime.agent;
+      if (!agent.isOrchestrator) continue;
+      const anchor = runtime.position;
+      seen.add(agent.id);
+      let ring = this.orchestratorRings.get(agent.id);
+      if (!ring) {
+        const { geometry, material } = this.ringAssets();
+        ring = new THREE.Mesh(geometry, material);
+        ring.rotation.x = -Math.PI / 2;
+        this.scene.add(ring);
+        this.orchestratorRings.set(agent.id, ring);
+      }
+      ring.position.set(anchor.x, anchor.y + 2.6, anchor.z);
+    }
+    for (const [id, ring] of this.orchestratorRings) {
+      if (!seen.has(id)) {
+        this.scene.remove(ring);
+        this.orchestratorRings.delete(id);
       }
     }
   }
@@ -615,9 +829,12 @@ export class ThreeEngine {
   update(time: number, dt: number): void {
     if (!this.mounted) return;
 
-    this.updateWalkers(dt);
+    const motionDelta = this.motion.advance(dt);
+    this.applyMotionDelta(motionDelta);
+    this.syncOrchestratorMarkers(motionDelta.upserted);
+    this.delegations?.update(time, this.agents);
     this.astronauts?.update(time, dt);
-    this.particles?.update(dt);
+    if (!this.reducedMotion) this.particles?.update(dt);
     this.syncBadgesAndParticles(dt);
 
     this.astronauts?.setUniforms({
@@ -627,30 +844,24 @@ export class ThreeEngine {
       uSunIntensity: this.threeSky?.getSunLight()?.intensity ?? 1,
       uAmbientColor: this.threeSky?.getAmbientLight()?.color ?? new THREE.Color(0x333344),
       uAmbientIntensity: this.threeSky?.getAmbientLight()?.intensity ?? 0.5,
+      uFillDirection: this.threeSky?.getFillLight()?.position.clone().normalize() ?? new THREE.Vector3(-0.5, 0.75, -0.25).normalize(),
+      uFillColor: this.threeSky?.getFillLight()?.color ?? new THREE.Color(0x9db8e8),
+      uFillIntensity: this.threeSky?.getFillLight()?.intensity ?? 0,
     });
   }
 
-  /** Walkers integrate toward targets. Leavers board the ship, then unmount. */
-  private updateWalkers(dt: number): void {
-    if (!this.astronauts) return;
-    for (const [id, agent] of this.agents) {
-      const leaving = this.leaving.has(id);
-      const arrived = stepToward(agent.position, agent.target, leaving ? LEAVE_SPEED : WALK_SPEED, dt);
-      if (arrived) {
-        agent.clip = this.baseClips.get(id) ?? agent.clip;
-        if (leaving) {
-          this.astronauts.removeAgent(id);
-          this.badges?.clearBadge(id);
-          this.agents.delete(id);
-          this.leaving.delete(id);
-          this.baseClips.delete(id);
-          this.prevBadges.delete(id);
-          this.emitTimers.delete(id);
-        }
-      } else {
-        agent.clip = 'walk';
-      }
-    }
+  pickAgent(clientX: number, clientY: number): string | null {
+    if (!this.container || !this.camera || !this.astronauts) return null;
+    const rect = this.container.getBoundingClientRect();
+    this.pointer.set(
+      ((clientX - rect.left) / rect.width) * 2 - 1,
+      -((clientY - rect.top) / rect.height) * 2 + 1,
+    );
+    this.raycaster.setFromCamera(this.pointer, this.camera);
+    const hit = this.raycaster.intersectObjects(this.astronauts.getMeshes(), false)
+      .find((intersection) => intersection.instanceId !== undefined);
+    if (hit?.instanceId === undefined) return null;
+    return this.astronauts.getAllAgents()[hit.instanceId]?.id ?? null;
   }
 
   private toBadgeType(value: string): BadgeType {
@@ -671,22 +882,22 @@ export class ThreeEngine {
   private syncBadgesAndParticles(dt: number): void {
     if (!this.astronauts) return;
     for (const [id, agent] of this.agents) {
-      const badge = this.leaving.has(id) ? 'leave' : agent.badge;
+      const badge = agent.badge;
       const head = agent.position.clone();
       head.y += 2.2;
       this.badges?.setBadge(id, this.toBadgeType(badge), agent.position, agent.suitColor);
 
       const prev = this.prevBadges.get(id);
-      if (prev !== 'celebrating' && badge === 'celebrating') {
+      if (!this.reducedMotion && prev !== 'celebrating' && badge === 'celebrating') {
         this.particles?.emit('confetti', head, 12);
       }
       this.prevBadges.set(id, badge);
 
       const timer = (this.emitTimers.get(id) ?? 0) + dt;
-      if (badge === 'working' && timer > 0.8) {
+      if (!this.reducedMotion && badge === 'working' && timer > 0.8) {
         this.particles?.emit('spark', head, 3);
         this.emitTimers.set(id, 0);
-      } else if (badge === 'none' && timer > 2) {
+      } else if (!this.reducedMotion && badge === 'none' && timer > 2) {
         this.particles?.emit('z', head, 1);
         this.emitTimers.set(id, 0);
       } else {
@@ -707,7 +918,17 @@ export class ThreeEngine {
     this.badges?.dispose();
     this.particles?.dispose();
     this.astronauts?.dispose();
+    this.delegations?.dispose();
     this.ship?.dispose();
+
+    for (const ring of this.orchestratorRings.values()) {
+      this.scene?.remove(ring);
+    }
+    this.orchestratorRings.clear();
+    this.ringGeometry?.dispose();
+    this.ringMaterial?.dispose();
+    this.ringGeometry = null;
+    this.ringMaterial = null;
 
     for (const mesh of this.buildings.values()) {
       mesh.geometry.dispose();
@@ -718,6 +939,7 @@ export class ThreeEngine {
       }
     }
     this.buildings.clear();
+    this.buildingFootprints.clear();
 
     for (const deck of this.decks.values()) {
       deck.geometry.dispose();
@@ -739,19 +961,6 @@ export class ThreeEngine {
       this.scatter.material.dispose();
     }
 
-    if (this.scene) {
-      this.scene.traverse((obj) => {
-        if (obj instanceof THREE.Mesh) {
-          obj.geometry?.dispose();
-          if (Array.isArray(obj.material)) {
-            obj.material.forEach((m) => m.dispose());
-          } else {
-            obj.material?.dispose();
-          }
-        }
-      });
-    }
-
     this.renderer?.dispose();
 
     // Drop every runtime registry so the next mount starts clean.
@@ -759,15 +968,21 @@ export class ThreeEngine {
     this.badges = null;
     this.particles = null;
     this.astronauts = null;
+    this.delegations = null;
     this.ship = null;
     this.terrain = null;
     this.scatter = null;
+    this.lastFramedSessionsKey = '';
     this.buildings.clear();
     this.decks.clear();
     this.lastScatterKeys = new Set();
     this.agents.clear();
-    this.leaving.clear();
-    this.baseClips.clear();
+    this.activity = null;
+    this.motion.reset();
+    this.navGrid = createNavGrid();
+    this.motionEnvironment = null;
+    this.motionEnvironmentKey = '';
+    this.motionEnvironmentRevision = 0;
     this.prevBadges.clear();
     this.emitTimers.clear();
     this.populated = false;

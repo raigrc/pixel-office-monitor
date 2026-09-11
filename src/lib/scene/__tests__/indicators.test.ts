@@ -42,8 +42,7 @@ describe('Badges index rebuild', () => {
     expect(b).toBeCloseTo(1, 5);
   });
 
-  it('faces badges at the camera quaternion on updateView', () => {
-    const badges = createBadges(4);
+  it('faces badges at the camera quaternion on updateView', () => {    const badges = createBadges(4);
     badges.setBadge('a', 'working', new THREE.Vector3(2, 0, 3), new THREE.Color(1, 1, 1));
     const camera = new THREE.PerspectiveCamera();
     camera.position.set(5, 8, 12);
@@ -61,5 +60,37 @@ describe('Badges index rebuild', () => {
     for (let i = 0; i < 16; i++) {
       expect(actual[i]).toBeCloseTo(expected.elements[i], 5);
     }
+  });
+
+  it('refreshes the surviving matrix slot after clearBadge (1.1D)', () => {
+    const badges = createBadges(4);
+    badges.setBadge('a', 'working', new THREE.Vector3(0, 0, 0), new THREE.Color(1, 0, 0));
+    badges.setBadge('b', 'waiting', new THREE.Vector3(5, 0, 5), new THREE.Color(0, 0, 1));
+
+    badges.clearBadge('a');
+
+    const m = new THREE.Matrix4();
+    badges.getMesh().getMatrixAt(0, m);
+    const pos = new THREE.Vector3().setFromMatrixPosition(m);
+    expect(pos.x).toBeCloseTo(5, 5);
+    expect(pos.y).toBeCloseTo(2.2, 5);
+    expect(pos.z).toBeCloseTo(5, 5);
+    badges.dispose();
+  });
+
+  it('renders only live badge slots after first, middle, and last removal', () => {
+    const badges = createBadges(4);
+    badges.setBadge('a', 'working', new THREE.Vector3(0, 0, 0));
+    badges.setBadge('b', 'waiting', new THREE.Vector3(1, 0, 0));
+    badges.setBadge('c', 'celebrating', new THREE.Vector3(2, 0, 0));
+    expect(badges.getMesh().count).toBe(3);
+
+    badges.clearBadge('b');
+    expect(badges.getMesh().count).toBe(2);
+    badges.clearBadge('a');
+    expect(badges.getMesh().count).toBe(1);
+    badges.clearBadge('c');
+    expect(badges.getMesh().count).toBe(0);
+    badges.dispose();
   });
 });

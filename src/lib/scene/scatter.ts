@@ -8,6 +8,11 @@ export interface ScatterConfig {
   planetPreset: PlanetPreset;
 }
 
+export interface ScatterObstacle {
+  position: THREE.Vector3;
+  radius: number;
+}
+
 const SCATTER_PRESETS: Record<'luna' | 'mars' | 'terra', {
   models: ('boulder' | 'crater' | 'rock')[];
   weights: number[];
@@ -200,11 +205,19 @@ export function createScatterMesh(
   });
 
   const mesh = new THREE.Mesh(mergedGeometry, material);
+  mesh.userData.obstacles = positions.map((position, index) => ({
+    position: position.clone(),
+    radius: scales[index],
+  })) satisfies ScatterObstacle[];
 
   // Source part geometries served their purpose. Free them.
   for (const geo of geometries) geo.dispose();
 
   return mesh;
+}
+
+export function getScatterObstacles(mesh: THREE.Mesh | null): readonly ScatterObstacle[] {
+  return (mesh?.userData.obstacles as ScatterObstacle[] | undefined) ?? [];
 }
 
 export function rebuildScatter(

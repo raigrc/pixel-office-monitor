@@ -168,6 +168,11 @@ export class ParticleSystem {
     return this.mesh;
   }
 
+  clear(): void {
+    this.particles.length = 0;
+    this.geometry.setDrawRange(0, 0);
+  }
+
   dispose(): void {
     this.geometry.dispose();
     this.material.dispose();

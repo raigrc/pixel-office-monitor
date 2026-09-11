@@ -4,7 +4,8 @@ import { createContext, useContext, useEffect, useRef, useState, Suspense } from
 import dynamic from "next/dynamic";
 import { OFFICE_DIMENSIONS, TILE_SIZE } from "@/lib/scene/office-layout";
 import { useDayNight } from "@/lib/scene/day-night";
-import { threeEngine } from "@/lib/scene/three-engine";
+import type { WorldState } from "@/lib/world/world-types";
+import type { ActivityModel } from "@/lib/activity/activity-model";
 
 /** Current camera zoom — lets scene children size HUD text in screen px. */
 export const CameraZoomContext = createContext(1);
@@ -13,6 +14,10 @@ export const useCameraZoom = () => useContext(CameraZoomContext);
 interface SceneViewportProps {
   children: React.ReactNode;
   className?: string;
+  world: WorldState;
+  activity: ActivityModel;
+  activeSessionId: string | null;
+  onAgentClick: (actorId: string) => void;
 }
 
 const ThreeCanvas = dynamic(() => import("./ThreeCanvas"), { ssr: false });
@@ -23,9 +28,8 @@ const ThreeCanvas = dynamic(() => import("./ThreeCanvas"), { ssr: false });
  * centers it, and bleeds the office floor texture underneath so no
  * letterbox color ever shows.
  */
-export default function SceneViewport({ children, className }: SceneViewportProps) {
+export default function SceneViewport({ children, className, world, activity, activeSessionId, onAgentClick }: SceneViewportProps) {
   const containerRef = useRef<HTMLDivElement>(null);
-  const threeContainerRef = useRef<HTMLDivElement>(null);
   const [view, setView] = useState({ scale: 1, x: 0, y: 0 });
   const [viewMode, setViewMode] = useState<"2d" | "3d">("2d");
   const dayNight = useDayNight();
@@ -52,16 +56,6 @@ export default function SceneViewport({ children, className }: SceneViewportProp
     ro.observe(el);
     return () => ro.disconnect();
   }, []);
-
-  useEffect(() => {
-    threeEngine.setViewMode(viewMode);
-    const handleResize = () => threeEngine.resize();
-    window.addEventListener("resize", handleResize);
-    return () => {
-      window.removeEventListener("resize", handleResize);
-      threeEngine.unmount();
-    };
-  }, [viewMode]);
 
   const toggleViewMode = () => {
     setViewMode((prev) => (prev === "2d" ? "3d" : "2d"));
@@ -93,13 +87,6 @@ export default function SceneViewport({ children, className }: SceneViewportProp
         }}
       />
 
-      {/* 3D Canvas Container */}
-      <div
-        ref={threeContainerRef}
-        className="absolute inset-0"
-        style={{ zIndex: viewMode === "3d" ? 10 : -1, height: '100%', width: '100%' }}
-      />
-
       {/* 2D Content */}
       <CameraZoomContext.Provider value={view.scale}>
         <div
@@ -116,10 +103,10 @@ export default function SceneViewport({ children, className }: SceneViewportProp
         </div>
       </CameraZoomContext.Provider>
 
-      {/* 3D Canvas */}
+      {/* 3D Canvas. ThreeCanvas alone owns the engine lifecycle. */}
       {viewMode === "3d" && (
         <Suspense fallback={<div className="absolute inset-0 flex items-center justify-center text-white">Loading 3D...</div>}>
-          <ThreeCanvas />
+          <ThreeCanvas world={world} activity={activity} activeSessionId={activeSessionId} onAgentClick={onAgentClick} />
         </Suspense>
       )}
 

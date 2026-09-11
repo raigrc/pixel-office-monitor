@@ -39,3 +39,7 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# local dev smoke logs (may contain bearer credentials; never commit)
+dev-smoke-3dfix.log
+dev-colony-test.log

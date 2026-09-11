@@ -2,6 +2,7 @@
 
 import { motion, AnimatePresence } from "motion/react";
 import Image from "next/image";
+import { useEffect, useRef } from "react";
 import { getCharacterMeta } from "@/lib/scene/assets";
 import type { CubicleDTO } from "@/lib/monitor-store";
 
@@ -19,6 +20,18 @@ function redactPathsInPrompt(prompt: string): string {
 }
 
 export default function AgentInspector({ cubicle, onClose, showPromptPreview, redactPaths }: AgentInspectorProps) {
+  const closeRef = useRef<HTMLButtonElement>(null);
+
+  useEffect(() => {
+    if (!cubicle) return;
+    closeRef.current?.focus();
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [cubicle, onClose]);
+
   if (!cubicle) return null;
 
   const agentKey = cubicle.agent;
@@ -43,6 +56,8 @@ export default function AgentInspector({ cubicle, onClose, showPromptPreview, re
         return "#F97316";
       case "celebrating":
         return "#22C55E";
+      case "blocked":
+        return "#EF4444";
       case "idle":
       default:
         return "#64748B";
@@ -59,6 +74,8 @@ export default function AgentInspector({ cubicle, onClose, showPromptPreview, re
         return "DELEGATING";
       case "celebrating":
         return "SUCCESS";
+      case "blocked":
+        return "ERROR";
       case "idle":
       default:
         return "IDLE";
@@ -109,6 +126,7 @@ export default function AgentInspector({ cubicle, onClose, showPromptPreview, re
               </div>
             </div>
             <button
+              ref={closeRef}
               onClick={onClose}
               className="p-1 text-[#64748B] hover:text-[#F1F5F9] transition-colors"
               aria-label="Close inspector"
@@ -121,6 +139,12 @@ export default function AgentInspector({ cubicle, onClose, showPromptPreview, re
           </div>
 
           <div className="space-y-4">
+            {cubicle.taskCategory && (
+              <div className="bg-[#1E293B] border border-[#334155] rounded p-3">
+                <div className="text-xs text-[#64748B] mb-1">TASK TYPE</div>
+                <div className="text-sm uppercase text-[#F1F5F9] font-mono">{cubicle.taskCategory}</div>
+              </div>
+            )}
             {lastTool && (
               <div className="bg-[#1E293B] border border-[#334155] rounded p-3">
                 <div className="text-xs text-[#64748B] mb-1">LAST TOOL</div>

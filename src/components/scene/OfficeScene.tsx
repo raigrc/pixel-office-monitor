@@ -6,20 +6,21 @@ import Image from "next/image";
 import CharacterSprite from "./CharacterSprite";
 import DeskDecor from "./DeskDecor";
 import { useCameraZoom } from "./SceneViewport";
-import { getActorActivityPose, getActorBusyCount } from "@/lib/scene/actor-pose";
+import { actorActiveWorkCount, actorPose, type ActivityModel } from "@/lib/activity/activity-model";
 import { TILE_SIZE, OFFICE_DIMENSIONS, DESK_ANCHORS, getDeskAnchor, LAYERS, ORCHESTRATOR_SPOT } from "@/lib/scene/office-layout";
 import { STANDING_ADMIN } from "@/lib/scene/roster";
 import { getAssetUrl } from "@/lib/scene/assets";
 import { useDayNight } from "@/lib/scene/day-night";
-import type { ActorInfo, FloorInfo, InvocationInfo } from "@/lib/monitor-types";
-import type { VisualHandoffState } from "@/lib/scene/presentation";
+import type { ActorInfo, FloorInfo } from "@/lib/monitor-types";
+import type { VisualActorPoseState, VisualHandoffState } from "@/lib/scene/presentation";
 
 interface OfficeSceneProps {
   floors: FloorInfo[];
   actors: ActorInfo[];
-  invocations: InvocationInfo[];
   activeFloorId: string | null;
   handoffStates?: VisualHandoffState[];
+  actorPoseStates?: VisualActorPoseState[];
+  activity: ActivityModel;
   onCubicleClick?: (actor: ActorInfo) => void;
   scale?: number;
 }
@@ -27,9 +28,10 @@ interface OfficeSceneProps {
 export default function OfficeScene({
   floors,
   actors,
-  invocations,
   activeFloorId,
   handoffStates = [],
+  actorPoseStates = [],
+  activity,
   onCubicleClick,
   scale = 1,
 }: OfficeSceneProps) {
@@ -213,7 +215,7 @@ export default function OfficeScene({
           const index = parseInt(indexStr, 10);
           const actorAtDesk = floorActors.find((a) => a.seatIndex === index);
           const isOccupied = !!actorAtDesk;
-          const deskPose = actorAtDesk ? getActorActivityPose(actorAtDesk, invocations) : "idle";
+          const deskPose = actorAtDesk ? actorPose(activity, actorAtDesk.actorId) : "idle";
           // Lamp rule: on while working, celebrating a finish, or pending —
           // off when the desk sleeps. Roster desks are permanent; activity,
           // not occupancy, drives the lamp.
@@ -436,7 +438,7 @@ export default function OfficeScene({
 
           let position = { x: desk.seatedActorAnchor.x * scale, y: desk.seatedActorAnchor.y * scale };
           let facing: "up" | "down" | "left" | "right" = "down";
-          let pose: VisualHandoffState["senderPose"] = getActorActivityPose(actor, invocations);
+          let pose: VisualHandoffState["senderPose"] = actorPoseStates.find((state) => state.actorId === actor.actorId)?.pose ?? actorPose(activity, actor.actorId);
 
           if (handoff && handoff.senderActorId === actor.actorId) {
             position = { x: handoff.senderPosition.x * scale, y: handoff.senderPosition.y * scale };
@@ -450,6 +452,24 @@ export default function OfficeScene({
 
           return (
             <div key={actor.actorId} className="absolute inset-0 pointer-events-none">
+              <div
+                className="absolute"
+                role="button"
+                tabIndex={0}
+                aria-label={`${actor.displayName || actor.agentKey} inspector`}
+                onClick={() => onCubicleClick?.(actor)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter" || event.key === " ") onCubicleClick?.(actor);
+                }}
+                style={{
+                  left: position.x - 20 * scale,
+                  top: position.y - 40 * scale,
+                  width: 40 * scale,
+                  height: 44 * scale,
+                  cursor: "pointer",
+                  pointerEvents: "auto",
+                }}
+              />
               <CharacterSprite
                 actorId={actor.actorId}
                 agentKey={actor.agentKey}
@@ -485,8 +505,16 @@ export default function OfficeScene({
 
         {/* Standing admin by the door — oversees the floor, never seated. */}
         {adminActors.map((actor) => {
-          const position = { x: ORCHESTRATOR_SPOT.x * scale, y: ORCHESTRATOR_SPOT.y * scale };
-          const pose = getActorActivityPose(actor, invocations);
+          const handoff = handoffsOnFloor.find((state) => state.senderActorId === actor.actorId || state.recipientActorId === actor.actorId);
+          const position = handoff?.senderActorId === actor.actorId
+            ? { x: handoff.senderPosition.x * scale, y: handoff.senderPosition.y * scale }
+            : { x: ORCHESTRATOR_SPOT.x * scale, y: ORCHESTRATOR_SPOT.y * scale };
+          const basePose = actorPoseStates.find((state) => state.actorId === actor.actorId)?.pose ?? actorPose(activity, actor.actorId);
+          const pose = handoff?.senderActorId === actor.actorId
+            ? handoff.senderPose
+            : handoff?.recipientActorId === actor.actorId
+              ? handoff.recipientPose
+              : basePose;
           return (
             <div key={actor.actorId} className="absolute inset-0 pointer-events-none">
               <div
@@ -511,7 +539,7 @@ export default function OfficeScene({
                 actorId={actor.actorId}
                 agentKey={actor.agentKey}
                 position={position}
-                facing="down"
+                facing={handoff?.senderActorId === actor.actorId ? handoff.senderFacing : "down"}
                 pose={pose}
                 scale={scale}
               />
@@ -561,8 +589,8 @@ export default function OfficeScene({
         style={{ zIndex: LAYERS.taskToken }}
         aria-hidden="true"
       >
-        {invocations
-          .filter((inv) => inv.executionStatus === "requested" || inv.executionStatus === "started")
+        {activity.directDelegations
+          .filter((inv) => inv.floorId === activeFloor.floorId)
           .map((inv) => {
             const sender = actors.find((a) => a.actorId === inv.senderActorId);
             const recipient = actors.find((a) => a.actorId === inv.recipientActorId);
@@ -579,7 +607,7 @@ export default function OfficeScene({
               : recipient.agentKey === STANDING_ADMIN
                 ? ORCHESTRATOR_SPOT
                 : rDesk.seatedActorAnchor;
-            const started = inv.executionStatus === "started";
+            const started = inv.lifecycle === "started";
             return (
               <line
                 key={`delegation-${inv.invocationId}`}
@@ -644,7 +672,7 @@ export default function OfficeScene({
           {Object.entries(DESK_ANCHORS).map(([indexStr, desk]) => {
             const index = parseInt(indexStr, 10);
             const actorAtDesk = floorActors.find((a) => a.seatIndex === index);
-            const deskPose = actorAtDesk ? getActorActivityPose(actorAtDesk, invocations) : "idle";
+            const deskPose = actorAtDesk ? actorPose(activity, actorAtDesk.actorId) : "idle";
             const isAwakeAtDesk = deskPose === "work" || deskPose === "success";
             // Lamp rule: on while working, celebrating, or pending — off asleep.
             const lampOn = deskPose === "work" || deskPose === "success" || deskPose === "seat";
@@ -787,7 +815,7 @@ export default function OfficeScene({
           const desk = getDeskAnchor(actor.seatIndex);
           const actorLabel = (actor.displayName || actor.agentKey).replace(/-/g, " ");
           // Repeat calls stack here: busy count becomes a queue badge.
-          const busyCount = getActorBusyCount(actor.actorId, invocations);
+          const busyCount = actorActiveWorkCount(activity, actor.actorId);
           // Nameplate pinned on the desk front — never collides with the row
           // above, at any room height. Screen-space font, desk-width plate.
           const fs = 10 / netZoom;
@@ -852,4 +880,3 @@ export default function OfficeScene({
     </div>
   );
 }
-
