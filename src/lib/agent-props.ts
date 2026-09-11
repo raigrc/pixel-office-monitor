@@ -3,6 +3,8 @@
  * Props are rendered as absolutely-positioned <img> inside the cubicle body.
  */
 
+import { getAgentVisualIdentity, type AgentDeskPropSet } from "@/lib/agent-visual-identity";
+
 export type PropDef = {
   src: string;
   x: string;
@@ -16,7 +18,7 @@ export type AgentPropsConfig = {
   items: PropDef[];
 };
 
-const AGENT_PROPS: Record<string, AgentPropsConfig> = {
+const DESK_PROP_SETS: Record<AgentDeskPropSet, AgentPropsConfig> = {
   "ai-systems": {
     items: [
       { src: "/sprites/props/server-rack.png", x: "8%", y: "30%", w: 24, h: 16, alt: "server rack" },
@@ -114,10 +116,9 @@ const INTERN_PROPS: AgentPropsConfig = {
 };
 
 /**
- * Get desk props for an agent. Returns empty items if unknown.
+ * Get desk props for an agent, with shared identity fallback for unknown roles.
  */
 export function getAgentProps(agentId: string): AgentPropsConfig {
   if (!agentId) return INTERN_PROPS;
-  const key = agentId.trim().toLowerCase();
-  return AGENT_PROPS[key] ?? INTERN_PROPS;
+  return DESK_PROP_SETS[getAgentVisualIdentity(agentId).deskPropSet];
 }

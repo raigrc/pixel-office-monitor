@@ -3,6 +3,7 @@
 import { memo } from "react";
 import Image from "next/image";
 import { getAgentProps } from "@/lib/agent-props";
+import { getAgentVisualIdentity, resolveAgentAccent } from "@/lib/agent-visual-identity";
 
 interface DeskDecorProps {
   agentKey: string;
@@ -18,10 +19,23 @@ interface DeskDecorProps {
  */
 function DeskDecorInner({ agentKey, scale = 1, isWorking = false }: DeskDecorProps) {
   const config = getAgentProps(agentKey);
+  const identity = getAgentVisualIdentity(agentKey);
   if (config.items.length === 0) return null;
 
   return (
     <>
+      <span
+        aria-hidden="true"
+        className="absolute"
+        style={{
+          left: 3 * scale,
+          top: 30 * scale,
+          width: Math.max(2, 3 * scale),
+          height: 8 * scale,
+          backgroundColor: resolveAgentAccent(agentKey, isWorking ? "#22C55E" : undefined),
+          boxShadow: `0 0 ${Math.max(1, 2 * scale)}px ${identity.accent}`,
+        }}
+      />
       {config.items.map((prop, i) => {
         const rightSide = i > 0;
         const w = prop.w * scale;
@@ -35,6 +49,7 @@ function DeskDecorInner({ agentKey, scale = 1, isWorking = false }: DeskDecorPro
             height={prop.h}
             loading="eager"
             className={`absolute ${isWorking ? "animate-prop-float" : ""}`}
+            data-role-accent={identity.accent}
             style={{
               left: rightSide ? 64 * scale - (3 + prop.w) * scale : 3 * scale,
               top: 28 * scale,

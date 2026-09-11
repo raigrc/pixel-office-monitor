@@ -26,6 +26,7 @@ import { clearGrid, createNavGrid, rasterizeBuilding, rasterizeCircle, rasterize
 import { HexCell, hexToKey, getNeighbors, DECK_TOP } from './hex-grid';
 import { Colony } from './colony';
 import { suitColorFor } from './actor-3d-map';
+import { getAgentVisualIdentity } from '../agent-visual-identity';
 import type { WorldAgent, WorldState } from '../world/world-types';
 import type { ActivityModel } from '../activity/activity-model';
 import { Delegations3D } from './delegations-3d';
@@ -743,6 +744,7 @@ export class ThreeEngine {
     if (!this.astronauts) return;
     for (const view of delta.upserted) {
       const semantic = this.clipBadgeFor(view.agent.status);
+      const identity = getAgentVisualIdentity(view.agent.agentKey);
       const moving = view.phase !== 'onsite';
       const clip = moving ? 'walk' : semantic.clip;
       const badge = view.phase === 'entering' ? 'spawn' : view.phase === 'leaving' ? 'leave' : semantic.badge;
@@ -756,6 +758,8 @@ export class ThreeEngine {
           clipTime: 0,
           frame: 0,
           suitColor: suitColorFor(view.agent.agentKey),
+          detailColor: new THREE.Color(identity.detail),
+          accessory: identity.accessory,
           faceIndex: Math.abs(view.agent.seatIndex) % 16,
           badge,
           working: !moving && semantic.working,
@@ -769,6 +773,8 @@ export class ThreeEngine {
         live.badge = badge;
         live.working = !moving && semantic.working;
         live.suitColor.copy(suitColorFor(view.agent.agentKey));
+        live.detailColor.set(identity.detail);
+        live.accessory = identity.accessory;
         live.faceIndex = Math.abs(view.agent.seatIndex) % 16;
         this.astronauts.updateAgent(view.agent.id, live);
       }
@@ -858,7 +864,7 @@ export class ThreeEngine {
       -((clientY - rect.top) / rect.height) * 2 + 1,
     );
     this.raycaster.setFromCamera(this.pointer, this.camera);
-    const hit = this.raycaster.intersectObjects(this.astronauts.getMeshes(), false)
+    const hit = this.raycaster.intersectObjects(this.astronauts.getPickMeshes(), false)
       .find((intersection) => intersection.instanceId !== undefined);
     if (hit?.instanceId === undefined) return null;
     return this.astronauts.getAllAgents()[hit.instanceId]?.id ?? null;

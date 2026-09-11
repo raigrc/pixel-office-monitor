@@ -39,6 +39,8 @@ function state(id: string, color: THREE.Color): AstronautState {
     clipTime: 0,
     frame: 0,
     suitColor: color,
+    detailColor: new THREE.Color(0xffffff),
+    accessory: 'device',
     faceIndex: 0,
     badge: 'none',
     working: false,

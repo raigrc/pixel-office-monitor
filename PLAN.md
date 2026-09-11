@@ -968,7 +968,7 @@ Use captured or synthetic V2 events with explicit stable actor IDs and invocatio
 
 ## Phase 4 — Visual Identity & Polish
 
-**Status:** active. Phase 4A implementation complete; visual approval pending. Later Phase 4 work remains paused.
+**Status:** active. Phase 4A and Phase 4B implementation complete; visual approval pending. Later Phase 4 work remains paused.
 
 ### Phase 4A - 2D office composition cleanup
 
@@ -992,6 +992,26 @@ Acceptance evidence:
 - [x] `npm test` passes 38 files and 363 tests; TypeScript and isolated production build pass.
 - [x] Full lint reports 0 errors and unchanged 54-warning baseline.
 - [ ] User approves Phase 4A desktop and mobile composition.
+
+### Phase 4B - Shared agent visual identity
+
+- `src/lib/agent-visual-identity.ts` is the single role-to-visual mapping used by both renderers. It covers every supported registry key and supplies deterministic muted fallbacks for future roles.
+- 2D desk props and role accents resolve through the shared identity. A small desk marker carries role color while working green retains semantic precedence.
+- 3D suit accents, backpack details, and six instanced accessory families resolve through the same identity. Accessories remain batched by family and do not create per-agent meshes.
+- 3D hit testing ignores decorative accessory meshes and continues resolving stable actor IDs through the astronaut body meshes.
+- Existing orchestrator, working, waiting, delegation, outcome, selection, hover, and reduced-motion semantics remain authoritative over role styling.
+
+Acceptance evidence:
+
+- [x] Every supported registry role has one shared identity with accent, detail color, accessory family, and 2D desk-prop set.
+- [x] Unknown roles resolve deterministically without extending either renderer mapping.
+- [x] 2D and 3D consume the same role identity source; hashed 3D suit colors and duplicate 2D accent tables are removed.
+- [x] Six role accessory families use six shared instanced meshes; one family is visible per agent.
+- [x] Working green overrides role accent in 2D, while existing semantic 3D badges remain unchanged.
+- [x] `npm test` passes 39 files and 367 tests; TypeScript and production build pass.
+- [x] Full lint reports 0 errors and unchanged 54-warning baseline.
+- [x] Isolated browser checks pass with 11 distinct 2D role accents, one 3D canvas, readable reduced-motion astronauts and accessories, no mobile overflow, and zero browser errors.
+- [ ] User approves Phase 4B desktop, mobile, and 3D visual identity.
 
 - Complete visual direction for 2D and 3D delegation, outcomes, standby, actor identity, and missing 3D clips or badges.
 - Align typography, color, lighting, materials, sprite assets, sound policy, and motion timing across both views.

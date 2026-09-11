@@ -108,9 +108,9 @@ describe('Astronauts', () => {
     astronauts?.dispose();
   });
 
-  it('should create 7 empty instanced meshes', () => {
+  it('should create 12 empty instanced meshes', () => {
     const meshes = astronauts.getMeshes();
-    expect(meshes.length).toBe(7);
+    expect(meshes.length).toBe(12);
     for (const mesh of meshes) {
       expect(mesh).toBeInstanceOf(THREE.InstancedMesh);
       expect(mesh.count).toBe(0);
@@ -126,6 +126,8 @@ describe('Astronauts', () => {
       clipTime: 0,
       frame: 0,
       suitColor: new THREE.Color(0xff8800),
+      detailColor: new THREE.Color(0xffffff),
+      accessory: 'device',
       faceIndex: 0,
       badge: 'none',
       working: false,
@@ -144,6 +146,8 @@ describe('Astronauts', () => {
       clipTime: 0,
       frame: 0,
       suitColor: new THREE.Color(0xff8800),
+      detailColor: new THREE.Color(0xffffff),
+      accessory: 'device',
       faceIndex: 0,
       badge: 'none',
       working: false,
@@ -179,6 +183,8 @@ describe('Astronauts', () => {
         clipTime: 0,
         frame: 0,
         suitColor: new THREE.Color(0xffffff),
+        detailColor: new THREE.Color(0xffffff),
+        accessory: 'device',
         faceIndex: 0,
         badge: 'none',
         working: false,
@@ -236,6 +242,8 @@ describe('Astronauts compaction (1.1D)', () => {
       clipTime: 0,
       frame: 0,
       suitColor: new THREE.Color(color),
+      detailColor: new THREE.Color(0xffffff),
+      accessory: 'device',
       faceIndex: face,
       badge: 'none',
       working: false,
@@ -268,7 +276,7 @@ describe('Astronauts compaction (1.1D)', () => {
   ): void {
     expect(crew.getAgentCount()).toBe(expected.length);
     const meshes = crew.getMeshes();
-    expect(meshes.length).toBe(7);
+    expect(meshes.length).toBe(12);
     const body = meshes[0];
     const suit = body.geometry.getAttribute('aSuit') as THREE.InstancedBufferAttribute;
     const faceAttr = body.geometry.getAttribute('instanceFace') as THREE.InstancedBufferAttribute;
@@ -342,6 +350,29 @@ describe('Astronauts compaction (1.1D)', () => {
 
     expect(crew.addAgent(makeAgent('b', 1, 0xffffff, 0))).toBe(true);
     expect(crew.getAgent('b')).toBeDefined();
+    crew.dispose();
+  });
+
+  it('renders one batched accessory family per agent', () => {
+    const crew = createAstronauts({ maxAgents: 2, rig });
+    crew.addAgent(makeAgent('device', 1, 0xffffff, 0));
+    const sensor = makeAgent('sensor', 2, 0xffffff, 0);
+    sensor.accessory = 'sensor';
+    crew.addAgent(sensor);
+
+    const deviceMatrix = new THREE.Matrix4();
+    const hiddenDeviceMatrix = new THREE.Matrix4();
+    const sensorMatrix = new THREE.Matrix4();
+    crew.getAccessoryMeshes().device.getMatrixAt(0, deviceMatrix);
+    crew.getAccessoryMeshes().device.getMatrixAt(1, hiddenDeviceMatrix);
+    crew.getAccessoryMeshes().sensor.getMatrixAt(1, sensorMatrix);
+    const deviceScale = new THREE.Vector3().setFromMatrixScale(deviceMatrix);
+    const hiddenDeviceScale = new THREE.Vector3().setFromMatrixScale(hiddenDeviceMatrix);
+    const sensorScale = new THREE.Vector3().setFromMatrixScale(sensorMatrix);
+
+    expect(deviceScale.x).toBeCloseTo(1);
+    expect(hiddenDeviceScale.x).toBeCloseTo(0);
+    expect(sensorScale.x).toBeCloseTo(1);
     crew.dispose();
   });
 });

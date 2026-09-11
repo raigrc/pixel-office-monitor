@@ -3,6 +3,7 @@ import type { ActorInfo, InvocationInfo } from '../monitor-types';
 import { getActorActivityPose } from './actor-pose';
 import { DECK_TOP } from './hex-grid';
 import type { AstronautState } from './astronauts';
+import { getAgentVisualIdentity } from '../agent-visual-identity';
 
 export type ActivityPose3D = 'work' | 'seat' | 'success' | 'idle';
 
@@ -17,11 +18,8 @@ export function mapPoseToClipBadge(pose: ActivityPose3D): { clip: string; badge:
   return POSE_TO_CLIP_BADGE[pose];
 }
 
-/** Deterministic suit color per agent key. Stable across snapshots. */
 export function suitColorFor(agentKey: string): THREE.Color {
-  let hash = 0;
-  for (let i = 0; i < agentKey.length; i++) hash = (hash * 31 + agentKey.charCodeAt(i)) >>> 0;
-  return new THREE.Color().setHSL((hash % 360) / 360, 0.7, 0.55);
+  return new THREE.Color(getAgentVisualIdentity(agentKey).accent);
 }
 
 /**
@@ -44,6 +42,7 @@ export function mapActorsToAgents(
     const pose = getActorActivityPose(actor, invocations, now) as ActivityPose3D;
     if (pose === 'idle') continue;
     const { clip, badge, working } = mapPoseToClipBadge(pose);
+    const identity = getAgentVisualIdentity(actor.agentKey);
     const angle = (actor.seatIndex % 8) * (Math.PI / 4);
     const position = new THREE.Vector3(
       home.x + Math.cos(angle) * 2.4,
@@ -58,6 +57,8 @@ export function mapActorsToAgents(
       clipTime: 0,
       frame: 0,
       suitColor: suitColorFor(actor.agentKey),
+      detailColor: new THREE.Color(identity.detail),
+      accessory: identity.accessory,
       faceIndex: Math.abs(actor.seatIndex) % 16,
       badge,
       working,

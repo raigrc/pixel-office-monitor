@@ -119,6 +119,8 @@ describe('multi-instance placement (1.1A/1.1D)', () => {
     clipTime: 0,
     frame: 0,
     suitColor: new THREE.Color(0xff8800),
+    detailColor: new THREE.Color(0xffffff),
+    accessory: 'device',
     faceIndex: 0,
     badge: 'none',
     working: false,
@@ -137,7 +139,7 @@ describe('multi-instance placement (1.1A/1.1D)', () => {
     astronauts.addAgent(agent('n1', 5, 3));
     astronauts.addAgent(agent('n2', -4, -2));
     const meshes = astronauts.getMeshes();
-    expect(meshes.length).toBe(7);
+    expect(meshes.length).toBe(12);
     for (const mesh of meshes) {
       expectCloseTo(translationOf(mesh, 0), new THREE.Vector3(5, 0.6, 3));
       expectCloseTo(translationOf(mesh, 1), new THREE.Vector3(-4, 0.6, -2));

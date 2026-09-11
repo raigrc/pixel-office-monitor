@@ -6,6 +6,7 @@ import {
   mapPoseToClipBadge,
 } from '../actor-3d-map';
 import { hexToWorld } from '../hex-grid';
+import { AGENT_VISUAL_IDENTITIES } from '../../agent-visual-identity';
 
 function actor(id: string, floorId: string, overrides: Partial<ActorInfo> = {}): ActorInfo {
   return {
@@ -52,6 +53,10 @@ describe('mapActorsToAgents', () => {
     }
     expect(agents[0].badge).toBe('working');
     expect(agents[1].badge).toBe('working');
+    expect(agents[0].suitColor.getHexString()).toBe(
+      AGENT_VISUAL_IDENTITIES['senior-engineer'].accent.slice(1).toLowerCase(),
+    );
+    expect(agents[0].accessory).toBe(AGENT_VISUAL_IDENTITIES['senior-engineer'].accessory);
   });
 
   it('keeps idle roster filler out of the colony', () => {

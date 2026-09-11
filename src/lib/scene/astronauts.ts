@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { CrewRig, Clip, createCrewRig, createBoneTexture, getClipFrame, getBoneMatrix } from './crew-rig';
 import { hexToWorld } from './hex-grid';
+import { AGENT_ACCESSORY_FAMILIES, type AgentAccessoryFamily } from '../agent-visual-identity';
 
 export interface AstronautState {
   id: string;
@@ -10,6 +11,8 @@ export interface AstronautState {
   clipTime: number;
   frame: number;
   suitColor: THREE.Color;
+  detailColor: THREE.Color;
+  accessory: AgentAccessoryFamily;
   faceIndex: number;
   badge: string;
   working: boolean;
@@ -202,7 +205,7 @@ export class Astronauts {
   private backpackMesh!: THREE.InstancedMesh;
   private antennaMesh!: THREE.InstancedMesh;
   private lampMesh!: THREE.InstancedMesh;
-  private hammerMesh!: THREE.InstancedMesh;
+  private accessoryMeshes!: Record<AgentAccessoryFamily, THREE.InstancedMesh>;
 
   private maxAgents: number;
   private agentCount = 0;
@@ -244,10 +247,6 @@ export class Astronauts {
     lampGeo.translate(-0.15, 2.1, 0);
     lampGeo.rotateX(-Math.PI / 2);
 
-    const hammerGeo = new THREE.BoxGeometry(0.15, 0.5, 0.15);
-    hammerGeo.translate(0.4, 1.0, 0.2);
-    hammerGeo.rotateZ(-Math.PI / 4);
-
     this.bodyMesh = new THREE.InstancedMesh(bodyGeo, this.createMaterial(), this.maxAgents);
     this.bodyMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
 
@@ -275,9 +274,10 @@ export class Astronauts {
     }), this.maxAgents);
 
     this.backpackMesh = new THREE.InstancedMesh(backpackGeo, new THREE.MeshStandardMaterial({
-      color: 0x222222,
+      color: 0xffffff,
       roughness: 0.8,
       metalness: 0.2,
+      vertexColors: true,
     }), this.maxAgents);
 
     this.antennaMesh = new THREE.InstancedMesh(antennaGeo, new THREE.MeshStandardMaterial({
@@ -294,11 +294,64 @@ export class Astronauts {
       opacity: 0.8,
     }), this.maxAgents);
 
-    this.hammerMesh = new THREE.InstancedMesh(hammerGeo, new THREE.MeshStandardMaterial({
-      color: 0x555555,
-      roughness: 0.7,
-      metalness: 0.3,
+    this.accessoryMeshes = {
+      sensor: this.createAccessoryMesh('sensor', this.createAccessoryGeometry('sensor')),
+      document: this.createAccessoryMesh('document', this.createAccessoryGeometry('document')),
+      tool: this.createAccessoryMesh('tool', this.createAccessoryGeometry('tool')),
+      comms: this.createAccessoryMesh('comms', this.createAccessoryGeometry('comms')),
+      shield: this.createAccessoryMesh('shield', this.createAccessoryGeometry('shield')),
+      device: this.createAccessoryMesh('device', this.createAccessoryGeometry('device')),
+    };
+  }
+
+  private createAccessoryGeometry(family: AgentAccessoryFamily): THREE.BufferGeometry {
+    switch (family) {
+      case 'sensor': {
+        const geometry = new THREE.TorusGeometry(0.12, 0.035, 4, 8);
+        geometry.translate(0.34, 1.45, 0.24);
+        return geometry;
+      }
+      case 'document': {
+        const geometry = new THREE.BoxGeometry(0.1, 0.34, 0.16);
+        geometry.rotateZ(-Math.PI / 5);
+        geometry.translate(0.38, 1.2, 0.18);
+        return geometry;
+      }
+      case 'tool': {
+        const geometry = new THREE.CylinderGeometry(0.045, 0.045, 0.48, 5);
+        geometry.rotateZ(-Math.PI / 4);
+        geometry.translate(0.38, 1.1, 0.2);
+        return geometry;
+      }
+      case 'comms': {
+        const geometry = new THREE.BoxGeometry(0.1, 0.28, 0.18);
+        geometry.translate(0.3, 1.82, 0.04);
+        return geometry;
+      }
+      case 'shield': {
+        const geometry = new THREE.CircleGeometry(0.18, 6);
+        geometry.translate(0, 1.42, 0.31);
+        return geometry;
+      }
+      case 'device': {
+        const geometry = new THREE.BoxGeometry(0.34, 0.23, 0.06);
+        geometry.rotateZ(-Math.PI / 10);
+        geometry.translate(0.28, 1.2, 0.28);
+        return geometry;
+      }
+    }
+  }
+
+  private createAccessoryMesh(family: AgentAccessoryFamily, geometry: THREE.BufferGeometry): THREE.InstancedMesh {
+    const mesh = new THREE.InstancedMesh(geometry, new THREE.MeshStandardMaterial({
+      color: 0xffffff,
+      roughness: 0.55,
+      metalness: 0.25,
+      vertexColors: true,
     }), this.maxAgents);
+    mesh.name = `role-accessory-${family}`;
+    mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+    return mesh;
   }
 
   private createMaterial(): THREE.ShaderMaterial {
@@ -371,7 +424,18 @@ export class Astronauts {
     this.backpackMesh.setMatrixAt(index, this.dummy.matrix);
     this.antennaMesh.setMatrixAt(index, this.dummy.matrix);
     this.lampMesh.setMatrixAt(index, this.dummy.matrix);
-    this.hammerMesh.setMatrixAt(index, this.dummy.matrix);
+    this.backpackMesh.setColorAt(index, agent.detailColor);
+
+    for (const family of AGENT_ACCESSORY_FAMILIES) {
+      const mesh = this.accessoryMeshes[family];
+      this.dummy.scale.setScalar(family === agent.accessory ? 1 : 0);
+      this.dummy.updateMatrix();
+      mesh.setMatrixAt(index, this.dummy.matrix);
+      mesh.setColorAt(index, agent.detailColor);
+      mesh.instanceMatrix.needsUpdate = true;
+      if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
+    }
+    this.dummy.scale.setScalar(1);
 
     const colorArray = this.bodyMesh.geometry.getAttribute('aSuit') as THREE.InstancedBufferAttribute | undefined;
     if (colorArray) {
@@ -395,9 +459,9 @@ export class Astronauts {
     this.helmetMesh.instanceMatrix.needsUpdate = true;
     this.visorMesh.instanceMatrix.needsUpdate = true;
     this.backpackMesh.instanceMatrix.needsUpdate = true;
+    if (this.backpackMesh.instanceColor) this.backpackMesh.instanceColor.needsUpdate = true;
     this.antennaMesh.instanceMatrix.needsUpdate = true;
     this.lampMesh.instanceMatrix.needsUpdate = true;
-    this.hammerMesh.instanceMatrix.needsUpdate = true;
   }
 
   /**
@@ -423,7 +487,7 @@ export class Astronauts {
     this.backpackMesh.count = this.agentCount;
     this.antennaMesh.count = this.agentCount;
     this.lampMesh.count = this.agentCount;
-    this.hammerMesh.count = this.agentCount;
+    for (const mesh of Object.values(this.accessoryMeshes)) mesh.count = this.agentCount;
   }
 
   update(time: number, dt: number): void {
@@ -471,8 +535,16 @@ export class Astronauts {
       this.backpackMesh,
       this.antennaMesh,
       this.lampMesh,
-      this.hammerMesh,
+      ...Object.values(this.accessoryMeshes),
     ];
+  }
+
+  getPickMeshes(): THREE.InstancedMesh[] {
+    return [this.bodyMesh, this.helmetMesh, this.visorMesh, this.backpackMesh, this.antennaMesh, this.lampMesh];
+  }
+
+  getAccessoryMeshes(): Readonly<Record<AgentAccessoryFamily, THREE.InstancedMesh>> {
+    return this.accessoryMeshes;
   }
 
   getAgentCount(): number {
@@ -524,11 +596,10 @@ export class Astronauts {
     } else {
       this.lampMesh.material.dispose();
     }
-    this.hammerMesh.geometry.dispose();
-    if (Array.isArray(this.hammerMesh.material)) {
-      this.hammerMesh.material.forEach((m) => m.dispose());
-    } else {
-      this.hammerMesh.material.dispose();
+    for (const mesh of Object.values(this.accessoryMeshes)) {
+      mesh.geometry.dispose();
+      if (Array.isArray(mesh.material)) mesh.material.forEach((material) => material.dispose());
+      else mesh.material.dispose();
     }
     this.boneTexture.dispose();
     this.faceAtlas.dispose();
