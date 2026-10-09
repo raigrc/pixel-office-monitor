@@ -99,7 +99,7 @@ try {
     probe.once('error', () => reject(new Error('Verification port 3011 occupied; existing process preserved')));
     probe.listen(port, '127.0.0.1', () => probe.close(resolve));
   });
-  server = spawn(process.execPath, [path.join(root, 'node_modules/next/dist/bin/next'), 'start', '-H', '127.0.0.1', '-p', String(port)], { cwd: root, env: process.env, stdio: 'ignore' });
+  server = spawn(process.execPath, [path.join(root, 'node_modules/next/dist/bin/next'), 'start', '-H', '127.0.0.1', '-p', String(port)], { cwd: root, env: { ...process.env, PIXEL_VERIFY_ISOLATED: '1' }, stdio: 'ignore' });
   report.serverPid = server.pid;
   await poll(async () => {
     if (server.exitCode !== null) throw new Error('Isolated server exited');

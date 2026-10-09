@@ -3,6 +3,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import OpenCodeDiscoveryPanel from "@/components/OpenCodeDiscoveryPanel";
 
 const LS_KEYS = {
   showPromptPreview: "pixel:showPromptPreview",
@@ -127,7 +128,7 @@ export default function SettingsPage() {
             className="mt-1 text-sm text-[#94A3B8]"
             style={{ fontFamily: "var(--font-inter), Inter, sans-serif" }}
           >
-            OLED • Pixel Office Monitor — local only, stored in localStorage.
+            Display preferences stay in localStorage. OpenCode discovery uses a separate read-only server connection.
           </p>
         </div>
         <Link
@@ -221,6 +222,8 @@ export default function SettingsPage() {
             </div>
           </section>
 
+          <OpenCodeDiscoveryPanel />
+
           {/* Info */}
           <section className="rounded-[6px] border-2 bg-[#1E293B] px-4 py-4" style={{ borderColor: "#334155" }}>
             <h3
@@ -253,7 +256,7 @@ export default function SettingsPage() {
               className="text-[11px] tracking-widest text-[#475569]"
               style={{ fontFamily: "var(--font-inter), Inter, sans-serif" }}
             >
-              OLED #0F172A • VT323 headings • localStorage only — no server write
+              OLED #0F172A • Local display preferences • Manual OpenCode discovery
             </p>
           </footer>
         </>

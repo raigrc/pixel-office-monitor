@@ -1,9 +1,0 @@
-
-> pixel-office-monitor@0.1.0 start
-> next start --port 3011
-
-▲ Next.js 16.3.4
-- Local:         http://localhost:3011
-- Network:       http://192.168.1.8:3011
-✓ Ready in 1090ms
-✓ Running next.config.ts took 191ms

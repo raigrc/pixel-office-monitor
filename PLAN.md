@@ -1,6 +1,6 @@
 # Pixel Office Monitor implementation plan
 
-Updated 2026-10-09. This plan reconciles the local checkout, original local plan, five v2 drafts, and `decisions.tsv`. Phase 0 is documentation and safe archive work only. No future phase is implemented by this pass.
+Updated 2026-10-10. This plan reconciles the local checkout, original local plan, five v2 drafts, and `decisions.tsv`. Phase 0 documentation and safe archival work is approved and checkpointed. The first authorized follow-up is security housekeeping and read-only OpenCode discovery, not session control.
 
 ## Status and authority
 
@@ -59,9 +59,43 @@ The final production build passes 19 browser checks on isolated loopback port 30
 
 Phase 0 stop gate is closed. Independent read-only review confirmed the evidence and the main agent verified the follow-up report fixes. No future-phase implementation or user visual acceptance follows from these automated checks.
 
+## Authorized follow-up slice
+
+The owner approved Phase 0 and requested its checkpoint commit, retained-log security housekeeping, and the first small read-only OpenCode health and persisted-session discovery slice. The checkpoint is `267cee9`, `chore: consolidate docs and archive legacy code`.
+
+This slice combines minimal new Phase 1 metadata groundwork with the read-only portion of the new Phase 2 capability spike. It does not complete either full phase or migrate existing monitor identities.
+
+- [x] Review status, diff and history, stage intentional cleanup files, and create the Phase 0 checkpoint. Existing renderer, sprite, generator, and runtime work remains outside that commit.
+- [x] Scan retained logs for broader credential patterns and privately compare configured values. Redact ten full monitor-token occurrences in two logs and verify repeat scans have no findings.
+- [x] Remove six generated logs from the Git index while preserving local files. Do not rewrite history or remove unrelated evidence.
+- [x] Rotate the three stored monitor-token values without printing them or changing unrelated configuration.
+- [x] Read-only check confirms the current production monitor accepts the stored rotated token. No agent command restarts the user-owned process.
+- [ ] Owner reloads the browser and refreshes any OpenCode process or shell-level override still using the old token. Client activation is not inferred from server authentication.
+- [x] Trace installed OpenCode 1.18.35 health and persisted metadata APIs. Preserve native IDs and nullable parent/workspace relationships.
+- [x] Compare a client panel with a private server-rendered page. Choose the smaller fixed API/panel shape with independent owner authentication, server-only credentials, bounded reads, and directory masking.
+- [x] Add Settings discovery, fixed API, independent signed cookie, loopback target validation, response limits, deadlines, and read concurrency caps. Discovery never enters the monitor store.
+- [x] Verify 69 discovery boundary tests, 520 total tests in 52 files, TypeScript, build, and zero new lint errors. Lint retains 20 existing warnings.
+- [x] Verify 30 runtime/browser checks on isolated servers. Read 41 actual persisted metadata records, preserve monitor sequence/floors, prove desktop/mobile and error states, and confirm process cleanup.
+- [x] Separate verification build output after observing production on port 3001. Earlier standard checks shared `.next`; final checks use ignored output and a generated TypeScript config, with unchanged production build identity and manifest fingerprints.
+- [x] Complete security review. Harden rotation failure output and cap unlock-body parsing. Both review fixes have behavioral checks.
+- [x] Close the narrow code/evidence gate after independent delivery review. Repeat the post-verification retained-log scan with 35 logs, zero findings, zero issues and zero tracked logs. Normal-process configuration and cached-client reload remain pending owner actions.
+- [x] Prepare missing private discovery settings with independent credentials. Use compatible OpenCode 1.18.35 on port 4097; leave incompatible version 7.8.1 on port 4096 untouched.
+- [x] Owner aligns provider credentials and restarts their processes. Seven checks verify the normal Settings panel against 43 native records, with unchanged monitor state during the window. The verifier starts or stops no process.
+- [ ] Owner rotates the credential shown by editor selection after wiring verification. Current values remain temporarily in use by explicit owner choice; no values enter reports.
+
+Only the first page of at most 50 records is shown, in native creation order. Discovery does not establish live activity, complete history, or root lineage. Session selection, message-history inspection, prompting, interrupts, terminal attachment, other providers, and renderer or upload work remain deferred.
+
+## Next checkpoint and Session Inspector
+
+The owner requested a dedicated discovery and housekeeping checkpoint before the next feature. Stage only owned changes, including a partial Settings integration patch. Leave existing theme, renderer, sprite and generator work unstaged. Six generated-log removals belong in this checkpoint; private environment files and verification evidence do not.
+
+Production configuration gate is closed. The proposed next slice is read-only session selection and bounded message-history inspection. It requires provider-version-specific pagination, workspace authorization, sensitive-content handling and no monitor-event synthesis. Inspection of OpenCode 1.18.35 source found per-session reads initialize location services and plugins; runtime proof on the confirmed plugin-free server is required before accepting the history path. New and legacy message APIs use different storage projections, so empty new-API history must not be presented as proof that a legacy conversation has no messages.
+
+No Session Inspector implementation belongs in the discovery checkpoint. Prompting, execution, interruption, terminal attachment, other providers and renderer migration remain outside the proposed next slice.
+
 ## New roadmap
 
-Every phase below is planned and unimplemented. Keep the current OpenCode plugin, ingest, memory store, and SSE path working until a replacement proves parity. No bridge, provider adapter, renderer migration, upload UI, persistence rewrite, or Remotion work belongs in Phase 0.
+The full phases below remain incomplete. The authorized read-only slice above is partial groundwork, not a completed control plane. Keep the current OpenCode plugin, ingest, memory store, and SSE path working until a replacement proves parity. No renderer migration, upload UI, persistence rewrite, or Remotion work belongs in this slice.
 
 ### New Phase 1. Minimal normalized identity and provider contract
 
@@ -74,7 +108,7 @@ Stop gate. Existing monitor behavior remains correct. A detected process does no
 
 ### New Phase 2. Local bridge and OpenCode control MVP
 
-- [ ] Run a small capability spike against the installed OpenCode version. Prove enumeration, loading, creation, prompting, interrupt, event streaming, and terminal attachment separately.
+- [ ] Complete the capability spike. Read-only health and bounded metadata enumeration are verified for 1.18.35. Loading messages, creation, prompting, interrupt, event streaming, and terminal attachment need separate proof and authorization.
 - [ ] Add a narrow privileged loopback bridge only where required. Validate origin, authorization, allowed workspace roots, executables, and operations. Do not expose arbitrary shell strings.
 - [ ] Add provider, project, and session selection with explicit capability state.
 - [ ] Add a prompt composer and transcript bound to the selected native session. Require explicit submit and show failures.
@@ -138,13 +172,13 @@ Stop gate. Output contains recorded events only, with no invented work, credenti
 - The earlier all-in-one 3D capture set exceeded its 120-second limit. Startup proof and previous lighting captures do not replace complete current browser evidence or user approval.
 - User approval remains open for local lighting, composition, visual identity, and final 2D and 3D direction. Image 2 visual-match P3 through P6 remain open.
 - Durable completion history, cross-tab notification coordination, remote authentication, private read authorization, origin controls, ingest rate limiting, and any live Supabase integration remain deferred.
-- Credential rotation is the owner's manual responsibility if prior token-bearing logs contain still-valid credentials. Do not print credentials, sanitize logs, or alter tracked evidence without separate approval.
-- Ignore rules do not untrack existing development logs, graphify artifacts, or historical `Temp/opencode/phase4b*` screenshots. No index cleanup happens in this phase.
+- Stored monitor credentials are rotated after owner-authorized log sanitation. The current monitor accepts the rotated token. Existing OpenCode processes, shell overrides and cached browser clients can still need owner reload. No unrelated provider credential was rotated, and no Git history was rewritten.
+- Six generated logs are removed from the index and retained locally. Historical screenshots and graphify artifacts remain tracked where they were already tracked. Ignore rules do not remove those artifacts from history.
 
 ## Handoff and verification ownership
 
 The main agent owns `decisions.tsv`, the three Phase 0 verification scripts, final checks, and the stop-gate decision. The scripts retain command output and aggregate browser and archive reports under ignored `Temp/opencode/phase0/`. The docs worker did not run a concurrent full suite or build.
 
-Use `npm test`, `npm test -- --maxWorkers=2`, `npx tsc --noEmit`, `npm run lint`, and `npm run build` with recorded results. Use a loopback server isolated from user port 3001 for browser proof. Preserve user changes and compare the scoped diff with the baseline before any later commit. No commit or PR is authorized by this phase.
+Use `npm test`, `npm test -- --maxWorkers=2`, `npx tsc --noEmit`, `npm run lint`, and `npm run build` with recorded results. Use a loopback server isolated from user port 3001 for browser proof. Preserve user changes and compare the scoped diff with the baseline before any later commit. The owner authorized the Phase 0 checkpoint and subsequently requested a dedicated discovery and housekeeping checkpoint. No PR is requested. Review staged scope before committing.
 
-Phase 0 is complete. A small OpenCode capability spike follows only after the owner's Phase 0 approval and separate authorization. No later phase was started.
+Phase 0 and read-only discovery are verified, including normal-process activation. Dedicated checkpoint comes before Session Inspector implementation. Do not add prompting or terminal control implicitly.

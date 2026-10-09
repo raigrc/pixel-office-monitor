@@ -2,6 +2,8 @@
 
 Updated 2026-10-09. Current sections describe inspected local code. Proposed sections describe future work, not available interfaces or a finalized storage schema.
 
+The 2026-10-10 read-only discovery slice is implemented separately from the monitor pipeline described below. Provider control remains proposed.
+
 ## Current data flow
 
 ```text
@@ -82,12 +84,44 @@ Hydration-aware synchronization and shared moving-instance bounds fixes exist in
 | `GET /api/health` | Local health and stream metrics |
 | `PATCH /api/floor/[sessionID]/rename` | Authenticated monitor-floor title mutation |
 | `POST /api/floor/[sessionID]/close` | Authenticated monitor-floor closure, not provider termination |
+| `POST /api/opencode-discovery` | Independent owner-secret unlock. Issues only a scoped application cookie; no provider request. |
+| `GET /api/opencode-discovery` | Cookie-authorized health and first-page metadata read from the configured OpenCode server. |
 
 Ingest accepts `x-monitor-token`, `x-token`, and Authorization token forms. SSE also accepts a query token. Server token selection includes a development fallback. The client uses `NEXT_PUBLIC_PIXEL_MONITOR_TOKEN`, which Next.js exposes in the browser bundle.
 
 This is a local-only compatibility model. It cannot protect a privileged bridge or a remotely exposed service. Local state and health diagnostics, the browser-visible token, absent ingest rate limiting, and existing Supabase read policies require separate review before remote use.
 
 Loopback binding reduces network exposure but does not replace origin validation, authorization, or protection against requests from hostile websites. Reports must not reproduce token-bearing URLs or raw sensitive logs.
+
+## Implemented read-only OpenCode discovery
+
+```text
+Settings discovery panel
+  -> independent owner-secret unlock and signed HttpOnly cookie
+  -> fixed GET /api/opencode-discovery
+  -> server-only configured loopback OpenCode boundary
+  -> GET /global/health and GET /api/session
+  -> validated, stripped metadata DTO
+  -> read-only Settings rows
+```
+
+`opencode-discovery.ts` owns schema-derived domain types. `opencode-discovery.server.ts` owns configuration, authorization, fixed networking, byte limits and projection. The route adapts HTTP. `OpenCodeDiscoveryPanel.tsx` owns explicit unlock and refresh, status text and metadata presentation. This is a narrow read boundary, not a general provider framework or a process-launch bridge.
+
+`PIXEL_DISCOVERY_ORIGIN` must match the canonical numeric loopback app host and port. `PIXEL_DISCOVERY_ACCESS_SECRET` is independent from every monitor/public/provider credential. Unlock validates a bounded body and issues a 15-minute HMAC-signed, audience-bound HttpOnly, SameSite=Strict cookie scoped to `/api/opencode-discovery`. Host, Origin, Fetch Metadata, fixed custom header and query checks apply before reads. The public monitor token cannot authorize this route.
+
+Provider configuration is `PIXEL_OPENCODE_URL`, `PIXEL_OPENCODE_DIRECTORY`, optional `PIXEL_OPENCODE_PASSWORD`, and optional `PIXEL_OPENCODE_USERNAME`, default `opencode`. Only canonical numeric loopback origins are allowed. Browser values cannot choose a URL, path, workspace or cursor. Credentials stay on the server. Redirects, legacy session-bootstrap fallback, retries, polling, process launch and provider writes are absent.
+
+For OpenCode 1.18.35, the service reads health, then `/api/session` with the fixed configured directory, `limit=50`, and descending creation order. Other healthy versions return unsupported listing. The page includes child and archived records. Native session/project/parent/workspace IDs and timestamps remain unchanged; missing parents stay unresolved. Entire-page scope checks reject unrelated directories. Raw directory, cursors, model/cost/token fields, provider errors and credentials are discarded before browser serialization.
+
+The boundary caps health at 4 KiB, listing at 256 KiB and 50 records, and unlock at 1 KiB. One eight-second deadline covers provider calls and body consumption. Two simultaneous provider reads and two simultaneous unlock-body parsers are allowed. Excess unlock parsing returns 429 before reading its body. Missing configuration, invalid configuration, app authentication failure, provider authentication failure, unreachable, unsupported, malformed, response-limit and busy states remain explicit.
+
+Discovery never imports the monitor store, synthesizes ingest events, selects a floor, or assigns execution activity. Verification reads real persisted metadata and confirms monitor sequence, floor and actor counts remain unchanged. All provider processes in verification are isolated, plugin-free and owned by that script. The agent does not restart user-owned processes. The current production monitor accepts the rotated token; producer and browser reload remain owner actions where old values are cached.
+
+`PIXEL_VERIFY_ISOLATED=1` selects a fixed ignored Next.js output directory and generated TypeScript config for verification only. Scripts set this flag on their child processes. Normal production still uses `.next`. The final gates compare production build identity and manifest fingerprints before and after each command. This addresses the earlier shared-output verification gap without replacing the running production build.
+
+The normal monitor/provider connection is also verified. Private settings target the compatible server on 4097; its credentials remain independent of discovery unlock and monitor ingestion. Production browser proof matches 43 provider-owned IDs and count, with no ingest requests or monitor-state change during the read. Next.js dev-resource `allowedDevOrigins` now includes 127.0.0.1; it is separate from this API's authorization boundary.
+
+The independent cookie protects this bounded single-user read capability. It is not approval for future privileged commands, remote access, hostile-local-process protection or multi-user deployment. Future control still requires its own security design.
 
 ## Proposed control architecture
 

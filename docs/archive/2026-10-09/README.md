@@ -138,6 +138,6 @@ The main agent verified the final production build on isolated loopback port 301
 
 Individual 3D close-zoom occlusion, animation replay, long-run leak checks, and final visual approval remain open. Single-canvas toggling proves renderer ownership, not animation parity. The archive audit checks configured-token occurrences without printing values. Existing tracked logs remain user data and require a separate retention decision.
 
-No commit or PR was created.
+No commit or PR was created during the initial Phase 0 run. After owner sign-off, checkpoint `267cee9`, `chore: consolidate docs and archive legacy code`, was created. Later security housekeeping and read-only discovery are recorded in the current primary documents, not represented as original Phase 0 delivery.
 
 Independent read-only review found no blocking issue. Follow-up checks confirmed explicit browser and server cleanup, an audit-ran marker for credential checks, and a complete-set marker for command gates. Final browser cleanup confirms both the browser closed and the isolated server exited. Reviewer model identity is not exposed by the Task API, so no cross-model review is claimed.

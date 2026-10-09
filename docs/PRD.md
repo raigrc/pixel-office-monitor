@@ -8,6 +8,8 @@ Pixel Office Monitor is a local OpenCode activity monitor. Instrumented provider
 
 Existing local multi-session controls group, search, pin, rename, close, follow, compare, and notify about monitor floors. They do not create, resume, prompt, interrupt, or stop provider sessions. Recent completed-session history depends on the in-memory server lifetime.
 
+Settings now independently checks a configured OpenCode 1.18.35 server and displays at most 50 persisted session metadata records. Owner-secret unlock is separate from monitor authentication. Saved records do not create floors or establish activity. Native IDs, parent links, creation/update times and reported archive times remain visible; missing parent lineage stays unresolved. Message content and session actions are not available in this first slice.
+
 The local Cozy visual system, role props, session identity, common rooms, and 48px character system are implemented. Final user visual approval remains unresolved. These facts supersede the v2 drafts' older GitHub-only assumptions.
 
 ## Target product
@@ -16,7 +18,7 @@ The proposed product is a local-first workspace for coding-agent sessions. A dev
 
 The initial user is one developer running local coding tools. Initial deployment is single-user and local. Multi-user hosting and remote process control are outside the MVP.
 
-The target adds these capabilities, none of which this documentation phase implements:
+The remaining target adds these capabilities beyond the verified read-only metadata slice:
 
 - Provider-owned session history, listing, opening, creation, and prompting.
 - Transcript, interrupt, and same-session terminal attachment where supported.

@@ -18,6 +18,8 @@ These replace the v2 draft's candidate palette as the current implementation ref
 
 The UI uses Press Start 2P, VT323, and Inter through the app layout. The page owns the monitor header. The desktop navigator is 18rem wide. Header and navigator share the 1024px breakpoint, with a mobile or tablet bottom sheet below it.
 
+Settings has a separate implemented OpenCode discovery section using the existing theme. An independent password input unlocks a short-lived HttpOnly cookie; manual Check and Refresh controls read health and metadata. Exact returned count, first-page limit, native IDs, unresolved parent links and archive times use text. Rows are nonselectable and provide no execution actions. Desktop and 390px mobile containment, keyboard submit, status announcements and stale-row clearing are verified. Discovery metadata is not a world-rendering input.
+
 ## Existing layered office
 
 `office-layout.ts` defines a `512×384` scene and a 16px tile unit. Explicit layers cover floor, rear walls, furniture, actors, foreground, task tokens, and labels. The current scene has depth-layered, angled pixel furniture. It is not a confirmed isometric tile engine.
