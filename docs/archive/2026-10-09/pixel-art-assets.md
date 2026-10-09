@@ -2,6 +2,22 @@
 
 > Complete inventory, palette reference, and procedures for the pixel art PNG assets. Verified against code 2026-09-05.
 
+> Character atlases moved to the layered 48-pixel system on 2026-09-12. See [`character-sprite-system.md`](./character-sprite-system.md) for its source-layer inventory, contract, generation commands, and contact sheet. Counts below describe the older office, prop, and monitor inventory and do not include generated character atlases.
+
+## P2 common-room additions, 2026-09-13
+
+`scripts/generate-office.py` generates these RGBA sprites in `public/sprites/office/` from the canonical Cozy theme. `src/lib/scene/assets.ts` registers their native dimensions.
+
+| File | Size | Placement |
+|---|---|---|
+| `credenza.png` | 64×24 | Rear-wall storage cabinet with books and paper |
+| `lounge-table.png` | 32×24 | Low table in front of the sofa, with a magazine and cup |
+| `conference-table.png` | 56×40 | Four-seat meeting area with papers on the tabletop |
+
+`OfficeEnvironment.tsx` draws oak floorboards, work-bay floor treatment, rugs, and low partitions with theme-based CSS. `office-layout.ts` owns their bounds and the common-room furniture placements. Geometry tests cover aisle clearance and entrance access with all sixteen desk slots occupied.
+
+Regenerate with `python scripts/generate-office.py`. Verify PNG dimensions and deterministic output with `npx vitest run src/lib/scene/__tests__/asset-manifest.test.ts`.
+
 ## Asset Inventory
 
 43 PNGs total — 5 background tiles, 2 cubicle frames, 23 desk props, 15 monitor screens.
