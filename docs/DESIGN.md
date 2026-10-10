@@ -1,6 +1,6 @@
 # Pixel Office Monitor design reference
 
-Updated 2026-10-09. Existing local design is implemented. Proposed projection, upload, and control UI changes remain unimplemented. User approval of the final 2D and 3D visual direction remains open.
+Updated 2026-10-10. Existing local design and read-only Session Inspector are implemented. Proposed projection, upload, and provider-control UI changes remain unimplemented. User approval of the final 2D and 3D visual direction remains open.
 
 ## Existing visual system
 
@@ -18,7 +18,17 @@ These replace the v2 draft's candidate palette as the current implementation ref
 
 The UI uses Press Start 2P, VT323, and Inter through the app layout. The page owns the monitor header. The desktop navigator is 18rem wide. Header and navigator share the 1024px breakpoint, with a mobile or tablet bottom sheet below it.
 
-Settings has a separate implemented OpenCode discovery section using the existing theme. An independent password input unlocks a short-lived HttpOnly cookie; manual Check and Refresh controls read health and metadata. Exact returned count, first-page limit, native IDs, unresolved parent links and archive times use text. Rows are nonselectable and provide no execution actions. Desktop and 390px mobile containment, keyboard submit, status announcements and stale-row clearing are verified. Discovery metadata is not a world-rendering input.
+Settings has a separate implemented OpenCode discovery section using the existing theme. An independent password input unlocks a short-lived HttpOnly cookie; manual Check and Refresh controls read health and metadata. Exact returned count, first-page limit, native IDs, unresolved parent links and archive times use text. Rows offer read-only recorded-message inspection. Desktop and 390px mobile containment, keyboard submit, status announcements and stale-row clearing are verified. Discovery metadata is not a world-rendering input.
+
+### Read-only Session Inspector
+
+Selection opens an inline Settings pane rather than a new route or monitor floor. The pane shows one disposable page of at most five recorded messages in chronological order. Latest and Older replace the page. Clear remains available while a request is pending. Parent and child buttons use loaded metadata only and label incomplete coverage.
+
+Text uses escaped, wrapping `<pre>` content. Tool details show recorded arguments/output and an explicit recorded status. A saved `running` status never becomes a live activity badge. Reasoning, files, media, errors, and unsupported parts use omission text. Redacted and truncated content has labels. No markup, media, external link, prompt composer, or terminal is rendered.
+
+Selection moves keyboard focus to the Inspector heading. Paging restores focus to its usable control, falling back to Latest when Older becomes unavailable. Controls have 44px minimum height and visible focus rings. New reads remove old content immediately, and generation checks reject late responses. Failure, metadata refresh, Clear, expiry, navigation, and page restoration discard inspection. History does not enter browser storage.
+
+Forty-one runtime checks cover desktop and 390px mobile layout, paging focus, expiry, stale-response disposal, actual navigation/back, inert content, storage isolation, and monitor sequence/entity-count continuity. Synthetic pagehide/pageshow tests also exercise restoration handlers. Ten checks verify the normal port-3001 panel against the existing provider. Screenshots contain fixtures only. No scene, motion, sprite, or renderer change belongs to this Inspector slice.
 
 ## Existing layered office
 

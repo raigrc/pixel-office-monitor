@@ -83,15 +83,32 @@ This slice combines minimal new Phase 1 metadata groundwork with the read-only p
 - [x] Owner aligns provider credentials and restarts their processes. Seven checks verify the normal Settings panel against 43 native records, with unchanged monitor state during the window. The verifier starts or stops no process.
 - [ ] Owner rotates the credential shown by editor selection after wiring verification. Current values remain temporarily in use by explicit owner choice; no values enter reports.
 
-Only the first page of at most 50 records is shown, in native creation order. Discovery does not establish live activity, complete history, or root lineage. Session selection, message-history inspection, prompting, interrupts, terminal attachment, other providers, and renderer or upload work remain deferred.
+Only the first page of at most 50 records is shown, in native creation order. Discovery does not establish live activity, complete history, or root lineage. Read-only selection and history are delivered in the next slice below. Prompting, interrupts, terminal attachment, other providers, and renderer or upload work remain deferred.
 
 ## Next checkpoint and Session Inspector
 
-The owner requested a dedicated discovery and housekeeping checkpoint before the next feature. Stage only owned changes, including a partial Settings integration patch. Leave existing theme, renderer, sprite and generator work unstaged. Six generated-log removals belong in this checkpoint; private environment files and verification evidence do not.
+The dedicated discovery and housekeeping checkpoint is `50a3faf`, `feat: add read-only OpenCode discovery`. It contains the owned discovery changes, partial Settings integration, and six generated-log removals. Existing theme, renderer, sprite, and generator work remains unstaged. Private configuration and verification evidence are excluded.
 
-Production configuration gate is closed. The proposed next slice is read-only session selection and bounded message-history inspection. It requires provider-version-specific pagination, workspace authorization, sensitive-content handling and no monitor-event synthesis. Inspection of OpenCode 1.18.35 source found per-session reads initialize location services and plugins; runtime proof on the confirmed plugin-free server is required before accepting the history path. New and legacy message APIs use different storage projections, so empty new-API history must not be presented as proof that a legacy conversation has no messages.
+The read-only Session Inspector is implemented and verified. OpenCode 1.18.35 source and runtime inspection established that the scoped legacy API contains history absent from the newer projection. The confirmed provider uses `serve --pure`. Legacy reads can initialize provider-managed location or cache metadata, so the slice does not claim zero filesystem writes or an atomic snapshot.
 
-No Session Inspector implementation belongs in the discovery checkpoint. Prompting, execution, interruption, terminal attachment, other providers and renderer migration remain outside the proposed next slice.
+The Inspector remains separate from the discovery checkpoint. Its current changes are uncommitted. Prompting, execution, interruption, terminal attachment, other providers, and renderer migration remain outside this slice.
+
+- [x] Ground legacy history and pure-mode behavior in pinned source and a bounded real-provider probe.
+- [x] Compare two Inspector designs, choose inline Settings, and adopt encrypted nonce-bound continuations and disposable history.
+- [x] Enroll the private connection profile without printing credentials or changing owner processes.
+- [x] Add ephemeral native-session selection and fixed history GET with fresh first-page membership checks before legacy bootstrap.
+- [x] Validate session scope before and after messages, validate all message/part bindings before projection, and reject scope drift.
+- [x] Project escaped recorded text, agent labels, and saved tool states. Redact before clipping and omit reasoning, files, media, errors, and arbitrary metadata.
+- [x] Reduce the original fixed page size from 20 to five after 41 of 48 real reads exceeded 256 KiB. Smaller-page probing and real backward paging justify the change. Keep raw and serialized caps unchanged.
+- [x] Bind AES-256-GCM continuations to owner nonce, connection profile, directory, native session/project/workspace, five-message limit, native cursor, and expiry.
+- [x] Verify shared two-read admission, abort/deadline recovery, tampering, scope swaps, redaction, clipping, and release-time expiry.
+- [x] Verify 41 isolated runtime/browser checks, including real five-message latest/older pages for one session, 17 recorded tool parts, desktop/mobile containment, focus, expiry, actual navigation/back, stale-response disposal, and unchanged monitor sequence/entity counts.
+- [x] Verify ten normal port-3001 checks against the owner provider. Preserve monitor sequence/entity counts and native identity tuples during the read window, with no owner process actions.
+- [x] Keep final command evidence under `Temp/opencode/history/gates/`, fixture-only screenshots under `Temp/opencode/history/browser/`, and aggregate normal-panel evidence under `Temp/opencode/production-history/`.
+
+The narrow Inspector runtime gate is closed. Both test commands pass 555 tests across 53 files. TypeScript and isolated production build pass. Lint has zero errors and 20 existing warnings. Every command preserves normal production build identity and manifests. A parallel browser rerun timed out and did not confirm Chrome cleanup. The harness now tracks its own browser child, and final sequential reruns pass with confirmed cleanup. Full Phase 1 and Phase 2 remain incomplete. Owner credential rotation remains pending by explicit choice.
+
+Read-only review found no new blocking Inspector code issue. Evidence wording was tightened after review: five-message probing still overflowed for five of ten sessions, the original 20-message failure aggregate was recovered from captured tool output, and actual navigation/back was added alongside synthetic lifecycle checks. Reviewer uses the same model family; different-family review is not established. The reviewer did not inspect private credentials or reconstruct the full transcript.
 
 ## New roadmap
 
@@ -108,7 +125,7 @@ Stop gate. Existing monitor behavior remains correct. A detected process does no
 
 ### New Phase 2. Local bridge and OpenCode control MVP
 
-- [ ] Complete the capability spike. Read-only health and bounded metadata enumeration are verified for 1.18.35. Loading messages, creation, prompting, interrupt, event streaming, and terminal attachment need separate proof and authorization.
+- [ ] Complete the capability spike. Read-only health, bounded metadata enumeration, and scoped legacy history are verified for 1.18.35. Creation, prompting, interrupt, event streaming, and terminal attachment need separate proof and authorization.
 - [ ] Add a narrow privileged loopback bridge only where required. Validate origin, authorization, allowed workspace roots, executables, and operations. Do not expose arbitrary shell strings.
 - [ ] Add provider, project, and session selection with explicit capability state.
 - [ ] Add a prompt composer and transcript bound to the selected native session. Require explicit submit and show failures.
@@ -181,4 +198,4 @@ The main agent owns `decisions.tsv`, the three Phase 0 verification scripts, fin
 
 Use `npm test`, `npm test -- --maxWorkers=2`, `npx tsc --noEmit`, `npm run lint`, and `npm run build` with recorded results. Use a loopback server isolated from user port 3001 for browser proof. Preserve user changes and compare the scoped diff with the baseline before any later commit. The owner authorized the Phase 0 checkpoint and subsequently requested a dedicated discovery and housekeeping checkpoint. No PR is requested. Review staged scope before committing.
 
-Phase 0 and read-only discovery are verified, including normal-process activation. Dedicated checkpoint comes before Session Inspector implementation. Do not add prompting or terminal control implicitly.
+Phase 0, read-only discovery, and Session Inspector are verified, including normal-process activation. Discovery is checkpointed separately. Inspector changes remain uncommitted. Do not add prompting or terminal control implicitly.

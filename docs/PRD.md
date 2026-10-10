@@ -1,6 +1,6 @@
 # Pixel Office Monitor product requirements
 
-Updated 2026-10-09. This reference distinguishes existing local behavior from the proposed controllable workspace. [PLAN.md](../PLAN.md) owns phase status and verification.
+Updated 2026-10-10. This reference distinguishes existing local behavior from the proposed controllable workspace. [PLAN.md](../PLAN.md) owns phase status and verification.
 
 ## Current product
 
@@ -8,7 +8,9 @@ Pixel Office Monitor is a local OpenCode activity monitor. Instrumented provider
 
 Existing local multi-session controls group, search, pin, rename, close, follow, compare, and notify about monitor floors. They do not create, resume, prompt, interrupt, or stop provider sessions. Recent completed-session history depends on the in-memory server lifetime.
 
-Settings now independently checks a configured OpenCode 1.18.35 server and displays at most 50 persisted session metadata records. Owner-secret unlock is separate from monitor authentication. Saved records do not create floors or establish activity. Native IDs, parent links, creation/update times and reported archive times remain visible; missing parent lineage stays unresolved. Message content and session actions are not available in this first slice.
+Settings independently checks a configured OpenCode 1.18.35 server and displays at most 50 persisted session metadata records. Owner-secret unlock is separate from monitor authentication. Saved records do not create floors or establish activity. Native IDs, parent links, creation/update times, and reported archive times remain visible. Missing parent lineage stays unresolved.
+
+The read-only Session Inspector selects an eligible native session and displays bounded recorded messages from an enrolled plugin-free connection. Each page contains at most five chronological messages. Older and Latest replace the page. Recorded tool states are saved facts, not live execution indicators. Prompting, interruption, and terminal attachment remain unavailable.
 
 The local Cozy visual system, role props, session identity, common rooms, and 48px character system are implemented. Final user visual approval remains unresolved. These facts supersede the v2 drafts' older GitHub-only assumptions.
 
@@ -18,9 +20,9 @@ The proposed product is a local-first workspace for coding-agent sessions. A dev
 
 The initial user is one developer running local coding tools. Initial deployment is single-user and local. Multi-user hosting and remote process control are outside the MVP.
 
-The remaining target adds these capabilities beyond the verified read-only metadata slice:
+The remaining target adds these capabilities beyond verified read-only discovery and inspection:
 
-- Provider-owned session history, listing, opening, creation, and prompting.
+- Broader provider-owned history and listing, session opening for execution, creation, and prompting.
 - Transcript, interrupt, and same-session terminal attachment where supported.
 - Provider-scoped identities, observed and declared agent definitions, and explicit capability limits.
 - Persistent visual assignments and validated character-pack import.
@@ -35,6 +37,14 @@ The remaining target adds these capabilities beyond the verified read-only metad
 The developer starts the monitor and an instrumented OpenCode session. A root session appears as a floor, with child actors grouped under that root. Available actor activity, invocation relationships, outcomes, and metadata appear in the UI.
 
 Missing endpoints do not create delegation edges. Unknown or cancelled outcomes do not imply success. An observed orchestrator is distinct from a synthesized coordinator. System actors do not occupy desks.
+
+### Inspect saved messages
+
+The developer unlocks discovery, checks metadata, and chooses Inspect recorded messages. Selection is eligible only while the native session remains in a fresh approved-workspace first page. Scope changes or unavailable selections return no message content.
+
+The Inspector shows escaped recorded text, recorded agent labels, and credential-redacted tool arguments/output. Reasoning, files, media, and raw errors have omission labels. Parent and child navigation uses loaded metadata only, with incomplete-coverage labels. No history read starts provider execution or creates monitor activity.
+
+One disposable page remains in browser memory for at most five minutes, bounded by the owner cookie. Refresh, new reads, failure, Clear, expiry, navigation, and page restoration discard it. No transcript, selection, or continuation enters browser storage. Oversized raw pages fail explicitly.
 
 ### Control a session, planned
 

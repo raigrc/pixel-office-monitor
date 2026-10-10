@@ -5,8 +5,8 @@ import { parseEnv } from 'node:util';
 import { createHash } from 'node:crypto';
 
 const label = process.argv[2] ?? 'final';
-if (!['baseline', 'final', 'discovery'].includes(label)) throw new Error('Use baseline, final or discovery');
-const output = label === 'discovery' ? path.resolve('Temp/opencode/discovery/gates') : path.resolve('Temp/opencode/phase0', label);
+if (!['baseline', 'final', 'discovery', 'history'].includes(label)) throw new Error('Use baseline, final, discovery or history');
+const output = ['discovery', 'history'].includes(label) ? path.resolve(`Temp/opencode/${label}/gates`) : path.resolve('Temp/opencode/phase0', label);
 const localEnv = existsSync('.env.local') ? parseEnv(readFileSync('.env.local', 'utf8')) : {};
 mkdirSync(output, { recursive: true });
 const isolatedConfig = path.resolve('Temp/opencode/verification.tsconfig.json');

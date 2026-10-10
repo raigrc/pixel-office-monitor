@@ -1,7 +1,11 @@
 import { z } from "zod";
 
-const nativeID = z.string().min(1).max(256).regex(/^[A-Za-z0-9_.:-]+$/);
-const sessionID = nativeID.brand<"OpenCodeSessionID">();
+export const nativeIDSchema = z.string().min(1).max(256).regex(/^[A-Za-z0-9_.:-]+$/).refine(value => value !== "." && value !== "..");
+const nativeID = nativeIDSchema;
+export const sessionIDSchema = nativeID.brand<"OpenCodeSessionID">();
+const sessionID = sessionIDSchema;
+export const messageIDSchema = nativeID.regex(/^msg/).brand<"OpenCodeMessageID">();
+export const partIDSchema = nativeID.regex(/^prt/).brand<"OpenCodePartID">();
 const timestamp = z.number().int().nonnegative().max(8_640_000_000_000_000);
 
 export const discoveryProblemSchema = z.object({
@@ -53,6 +57,53 @@ export const openCodeDiscoverySchema = z.discriminatedUnion("kind", [
   }).strict(),
 ]);
 export type OpenCodeDiscovery = z.infer<typeof openCodeDiscoverySchema>;
+
+const historyTextSchema = z.object({
+  text: z.string().refine((value) => new TextEncoder().encode(value).byteLength <= 4096),
+  redacted: z.boolean(),
+  truncated: z.boolean(),
+}).strict();
+const historyPartBinding = { id: partIDSchema, sessionID, messageID: messageIDSchema };
+export const historyPartSchema = z.discriminatedUnion("kind", [
+  z.object({ ...historyPartBinding, kind: z.literal("text"), content: historyTextSchema, synthetic: z.boolean(), ignored: z.boolean() }).strict(),
+  z.object({
+    ...historyPartBinding, kind: z.literal("recorded-tool"), name: historyTextSchema,
+    status: z.enum(["pending", "running", "completed", "error"]),
+    input: historyTextSchema, output: historyTextSchema.nullable(), omitted: z.boolean(),
+  }).strict(),
+  z.object({
+    ...historyPartBinding, kind: z.literal("omitted"),
+    reason: z.enum(["reasoning", "file", "snapshot", "patch", "agent", "compaction", "subtask", "retry", "step-start", "step-finish", "unsupported", "page-limit"]),
+    count: z.number().int().positive(),
+  }).strict(),
+]);
+export type HistoryPart = z.infer<typeof historyPartSchema>;
+export const historyMessageSchema = z.object({
+  id: messageIDSchema, sessionID, role: z.enum(["user", "assistant"]),
+  time: z.object({ created: timestamp, completed: timestamp.nullable() }).strict(),
+  agent: historyTextSchema.nullable(), parts: z.array(historyPartSchema).max(50), omittedParts: z.number().int().nonnegative(),
+}).strict();
+export type HistoryMessage = z.infer<typeof historyMessageSchema>;
+export const historyProblemSchema = z.object({
+  code: z.enum(["unauthorized", "unreachable", "unsupported", "malformed", "limit-exceeded", "busy", "selection-unavailable", "scope-changed", "invalid-cursor", "expired"]),
+  message: z.string().max(240),
+}).strict();
+export type HistoryProblem = z.infer<typeof historyProblemSchema>;
+export const openCodeHistorySchema = z.discriminatedUnion("kind", [
+  z.object({ kind: z.literal("not-configured"), message: z.string().max(240) }).strict(),
+  z.object({ kind: z.literal("invalid-config"), message: z.string().max(240) }).strict(),
+  z.object({ kind: z.literal("unsupported-profile"), message: z.string().max(240) }).strict(),
+  z.object({ kind: z.literal("auth-failure"), scope: z.literal("app"), message: z.string().max(240) }).strict(),
+  z.object({ kind: z.literal("failure"), problem: historyProblemSchema }).strict(),
+  z.object({
+    kind: z.literal("history-page"), session: discoverySessionSchema,
+    messages: z.array(historyMessageSchema).max(5), limit: z.literal(5), order: z.literal("chronological"),
+    olderCursor: z.string().max(8192).nullable(), expires: timestamp,
+    omittedParts: z.number().int().nonnegative(), truncated: z.boolean(),
+  }).strict(),
+]);
+export type OpenCodeHistory = z.infer<typeof openCodeHistorySchema>;
+export type HistoryPage = Extract<OpenCodeHistory, { kind: "history-page" }>;
 
 export function discoveryStatusText(result: OpenCodeDiscovery): string {
   switch (result.kind) {

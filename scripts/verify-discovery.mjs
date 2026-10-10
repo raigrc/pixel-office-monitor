@@ -152,7 +152,7 @@ try {
     const list = page.getByRole('list', { name: 'Persisted OpenCode session metadata' });
     check(`${label} renders parent, child and archived metadata`, await list.getByRole('listitem').count() === 3 && await list.getByText('Present in this page. Child record.', { exact: true }).count() === 1);
     check(`${label} shows explicit first-page limit`, await page.getByText(/First page only, limit 50/).count() === 1);
-    check(`${label} contains no session actions`, await list.getByRole('button').count() === 0 && await list.getByRole('link').count() === 0);
+    check(`${label} offers only read-only inspection`, await list.getByRole('button').count() === 3 && await list.getByRole('button', { name: 'Inspect recorded messages', exact: true }).count() === 3 && await list.getByRole('link').count() === 0);
     check(`${label} has no horizontal overflow`, await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
     const cookies = await context.cookies();
     const cookie = cookies.find(value => value.name === 'pixel-discovery');

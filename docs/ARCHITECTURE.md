@@ -1,8 +1,8 @@
 # Pixel Office Monitor architecture
 
-Updated 2026-10-09. Current sections describe inspected local code. Proposed sections describe future work, not available interfaces or a finalized storage schema.
+Updated 2026-10-10. Current sections describe inspected local code. Proposed sections describe future work, not available interfaces or a finalized storage schema.
 
-The 2026-10-10 read-only discovery slice is implemented separately from the monitor pipeline described below. Provider control remains proposed.
+Read-only discovery and Session Inspector are implemented separately from the monitor pipeline described below. Provider control remains proposed.
 
 ## Current data flow
 
@@ -86,6 +86,7 @@ Hydration-aware synchronization and shared moving-instance bounds fixes exist in
 | `POST /api/floor/[sessionID]/close` | Authenticated monitor-floor closure, not provider termination |
 | `POST /api/opencode-discovery` | Independent owner-secret unlock. Issues only a scoped application cookie; no provider request. |
 | `GET /api/opencode-discovery` | Cookie-authorized health and first-page metadata read from the configured OpenCode server. |
+| `GET /api/opencode-discovery/history` | Cookie-authorized, enrolled, scoped legacy message page. Selection and opaque continuation arrive in headers. |
 
 Ingest accepts `x-monitor-token`, `x-token`, and Authorization token forms. SSE also accepts a query token. Server token selection includes a development fallback. The client uses `NEXT_PUBLIC_PIXEL_MONITOR_TOKEN`, which Next.js exposes in the browser bundle.
 
@@ -109,19 +110,48 @@ Settings discovery panel
 
 `PIXEL_DISCOVERY_ORIGIN` must match the canonical numeric loopback app host and port. `PIXEL_DISCOVERY_ACCESS_SECRET` is independent from every monitor/public/provider credential. Unlock validates a bounded body and issues a 15-minute HMAC-signed, audience-bound HttpOnly, SameSite=Strict cookie scoped to `/api/opencode-discovery`. Host, Origin, Fetch Metadata, fixed custom header and query checks apply before reads. The public monitor token cannot authorize this route.
 
-Provider configuration is `PIXEL_OPENCODE_URL`, `PIXEL_OPENCODE_DIRECTORY`, optional `PIXEL_OPENCODE_PASSWORD`, and optional `PIXEL_OPENCODE_USERNAME`, default `opencode`. Only canonical numeric loopback origins are allowed. Browser values cannot choose a URL, path, workspace or cursor. Credentials stay on the server. Redirects, legacy session-bootstrap fallback, retries, polling, process launch and provider writes are absent.
+Provider configuration is `PIXEL_OPENCODE_URL`, `PIXEL_OPENCODE_DIRECTORY`, optional `PIXEL_OPENCODE_PASSWORD`, and optional `PIXEL_OPENCODE_USERNAME`, default `opencode`. Only canonical numeric loopback origins are allowed. Browser values cannot choose a URL, path, workspace, or raw provider cursor. Credentials stay on the server. Metadata discovery has no legacy session-bootstrap fallback. Neither route follows redirects, retries, polls, launches processes, or sends provider writes.
 
 For OpenCode 1.18.35, the service reads health, then `/api/session` with the fixed configured directory, `limit=50`, and descending creation order. Other healthy versions return unsupported listing. The page includes child and archived records. Native session/project/parent/workspace IDs and timestamps remain unchanged; missing parents stay unresolved. Entire-page scope checks reject unrelated directories. Raw directory, cursors, model/cost/token fields, provider errors and credentials are discarded before browser serialization.
 
 The boundary caps health at 4 KiB, listing at 256 KiB and 50 records, and unlock at 1 KiB. One eight-second deadline covers provider calls and body consumption. Two simultaneous provider reads and two simultaneous unlock-body parsers are allowed. Excess unlock parsing returns 429 before reading its body. Missing configuration, invalid configuration, app authentication failure, provider authentication failure, unreachable, unsupported, malformed, response-limit and busy states remain explicit.
 
-Discovery never imports the monitor store, synthesizes ingest events, selects a floor, or assigns execution activity. Verification reads real persisted metadata and confirms monitor sequence, floor and actor counts remain unchanged. All provider processes in verification are isolated, plugin-free and owned by that script. The agent does not restart user-owned processes. The current production monitor accepts the rotated token; producer and browser reload remain owner actions where old values are cached.
+Discovery never imports the monitor store, synthesizes ingest events, selects a floor, or assigns execution activity. Verification reads real persisted metadata and confirms monitor sequence, floor and actor counts remain unchanged. The original discovery verifier owns its isolated provider. Inspector verification reads the existing approved provider and starts only an isolated monitor and fixture provider. The agent does not restart user-owned processes. The current production monitor accepts the rotated token; producer and browser reload remain owner actions where old values are cached.
 
 `PIXEL_VERIFY_ISOLATED=1` selects a fixed ignored Next.js output directory and generated TypeScript config for verification only. Scripts set this flag on their child processes. Normal production still uses `.next`. The final gates compare production build identity and manifest fingerprints before and after each command. This addresses the earlier shared-output verification gap without replacing the running production build.
 
 The normal monitor/provider connection is also verified. Private settings target the compatible server on 4097; its credentials remain independent of discovery unlock and monitor ingestion. Production browser proof matches 43 provider-owned IDs and count, with no ingest requests or monitor-state change during the read. Next.js dev-resource `allowedDevOrigins` now includes 127.0.0.1; it is separate from this API's authorization boundary.
 
 The independent cookie protects this bounded single-user read capability. It is not approval for future privileged commands, remote access, hostile-local-process protection or multi-user deployment. Future control still requires its own security design.
+
+## Implemented Session Inspector
+
+`OpenCodeDiscoveryPanel.tsx` owns ephemeral selection, fetch cancellation, generation checks, expiry, and page-restoration cleanup. `OpenCodeHistoryPane.tsx` renders one projected page with escaped React text and recorded-status labels. Older pages replace the current page. No history, selection, or cursor is persisted. Relationship navigation uses the loaded metadata page only.
+
+Both HTTP routes share one process-global read service and its two-read admission counter. History accepts only a fixed GET with no query or body. Existing Host, Origin, Fetch Metadata, custom-header, and signed-cookie checks apply. `X-Pixel-History-Session` supplies a validated native ID. Optional `X-Pixel-History-Cursor` carries an encrypted application continuation. The metadata route rejects history-control headers, and explicit history HEAD returns 405 without a read. Dot-segment identities are rejected before constructing provider URLs.
+
+History requires `PIXEL_OPENCODE_HISTORY_PROFILE`, a private SHA-256 enrollment of purpose/version, canonical provider origin, normalized directory, Basic username/password, and pinned OpenCode version. Missing or stale enrollment disables history while metadata stays available. Enrollment records an operator-confirmed `serve --pure` connection. Health alone cannot prove pure mode, and the profile cannot detect a replacement process with identical endpoint and credentials.
+
+One eight-second deadline and read slot cover six fixed GETs:
+
+1. Supported provider health.
+2. Fresh configured-directory `/api/session` first page with limit 50.
+3. Scoped legacy `/session/:id` metadata for a session found in that page.
+4. Scoped legacy `/session/:id/message` with limit five and an optional decrypted native `before` cursor.
+5. Legacy metadata again.
+6. Fresh global metadata again.
+
+The service compares session/project/directory/parent/creation and reported workspace before releasing content. All message and part identities are validated before clipping, including omitted parts. Cookie and incoming cursor expiry, enrollment, and current configuration are rechecked before release. An unknown selection fails before any legacy bootstrap. Scope drift discards the page.
+
+Legacy history is deliberate. The new message API returned an empty projection for a root with real legacy messages. The legacy external-plugin loader honors pure mode. Location services can still update provider-managed metadata or caches. GET-only inspection therefore does not imply an atomic snapshot or zero filesystem writes.
+
+AES-256-GCM continuations use a fresh 12-byte IV and a purpose-specific HKDF key. Claims bind owner cookie nonce, connection profile, normalized directory, session/project/workspace, fixed five-message limit, backward order, native ID/time, and expiry. Lifetime is at most five minutes and cannot exceed the cookie or incoming continuation. Tokens are capped at 8192 characters, native cursors at 4096. Tampering, scope/owner swaps, expiry, and non-progressing page boundaries fail without returning content. Provider Link headers are ignored.
+
+Private Zod wire schemas validate provider input. Strict schema-derived public DTOs retain only approved recorded fields. Reasoning, files, media, errors, and arbitrary metadata have fixed omission labels. Tool input traversal is bounded by depth and node count. Credentials and known patterns are redacted before UTF-8 clipping. Credential-bearing identities fail instead of being rewritten.
+
+Limits are five messages, 50 projected parts across a page, 4 KiB per text part or combined tool arguments/output, 256 KiB per raw response, and 64 KiB per serialized DTO including its cursor. Projection overflow emits omission markers or an explicit limit failure. Raw overflow always fails. Real 20-message reads exceeded the raw cap for 41 of 48 sessions, so five-message pages replaced the original design after a smaller-page probe.
+
+Runtime evidence covers 41 isolated checks and ten checks on the normal port-3001 monitor. For one selected real session, latest and older pages each contain five messages, including 17 projected recorded tool parts across both pages. Native identity tuples and monitor sequence/entity counts remained unchanged during the read window. These checks do not compare complete state or instrument provider filesystem/database writes. Fixture checks prove shared admission across route bundles, expiry, late-response disposal, actual navigation/back, inert content, mobile fit, and storage isolation. Synthetic lifecycle checks also cover pagehide/pageshow handlers, but use of browser back/forward cache is not guaranteed. Evidence retains no real screenshots, raw history, IDs, credentials, or continuations. Five-message probing still overflowed for five of ten sampled sessions, so bounded availability remains limited.
 
 ## Proposed control architecture
 

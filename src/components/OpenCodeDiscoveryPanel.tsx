@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useRef, useState, type FormEvent } from "react";
-import { discoveryStatusText, openCodeDiscoverySchema, type DiscoverySession, type OpenCodeDiscovery } from "@/lib/opencode-discovery";
+import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
+import { discoveryStatusText, openCodeDiscoverySchema, openCodeHistorySchema, type DiscoverySession, type HistoryPage, type OpenCodeDiscovery } from "@/lib/opencode-discovery";
+import OpenCodeHistoryPane from "./OpenCodeHistoryPane";
 
 type PanelState =
   | { kind: "idle"; message: string }
@@ -9,13 +10,28 @@ type PanelState =
   | { kind: "result"; result: OpenCodeDiscovery }
   | { kind: "error"; message: string };
 
+type InspectionState =
+  | { kind: "empty" }
+  | { kind: "loading"; id: DiscoverySession["id"] }
+  | { kind: "ready"; page: HistoryPage }
+  | { kind: "failure"; message: string };
+
 const controlClass = "min-h-11 rounded-[4px] border border-[var(--border)] bg-[var(--raised)] px-3 py-2 text-sm text-[var(--text)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--selection)] disabled:cursor-not-allowed disabled:opacity-50";
+
+function historyInspection(raw: unknown, id: DiscoverySession["id"]): InspectionState {
+  const parsed = openCodeHistorySchema.safeParse(raw);
+  if (!parsed.success) return { kind: "failure", message: "History returned an invalid response. No message content is shown." };
+  if (parsed.data.kind !== "history-page") return { kind: "failure", message: parsed.data.kind === "failure" ? parsed.data.problem.message : parsed.data.message };
+  return parsed.data.session.id !== id || parsed.data.expires <= Date.now()
+    ? { kind: "failure", message: "History selection changed or inspection expired. No message content is shown." }
+    : { kind: "ready", page: parsed.data };
+}
 
 function timeLabel(time: number | null): string {
   return time === null ? "Not reported" : new Date(time).toISOString();
 }
 
-function SessionMetadata({ record }: { record: DiscoverySession }) {
+function SessionMetadata({ record, selected, disabled, onInspect }: { record: DiscoverySession; selected: boolean; disabled: boolean; onInspect: () => void }) {
   return (
     <li className="min-w-0 rounded-[4px] border border-[var(--border)] bg-[var(--canvas)] p-3">
       <h3 className="break-words text-sm font-medium text-[var(--text)] [overflow-wrap:anywhere]">
@@ -31,6 +47,7 @@ function SessionMetadata({ record }: { record: DiscoverySession }) {
         <dt>Updated</dt><dd>{timeLabel(record.time.updated)}</dd>
         <dt>Archived</dt><dd>{timeLabel(record.time.archived)}</dd>
       </dl>
+      <button type="button" className={`${controlClass} mt-3`} aria-pressed={selected} disabled={disabled} onClick={onInspect}>Inspect recorded messages</button>
     </li>
   );
 }
@@ -39,11 +56,65 @@ export default function OpenCodeDiscoveryPanel() {
   const [secret, setSecret] = useState("");
   const [state, setState] = useState<PanelState>({ kind: "idle", message: "No discovery read yet. Unlock, then choose Check OpenCode. Existing access can be checked without unlocking again." });
   const inFlight = useRef<AbortController | null>(null);
+  const [inspection, setInspection] = useState<InspectionState>({ kind: "empty" });
+  const historyFlight = useRef<AbortController | null>(null);
+  const generation = useRef(0);
+  const headingRef = useRef<HTMLHeadingElement | null>(null);
+  const latestRef = useRef<HTMLButtonElement | null>(null);
+  const olderRef = useRef<HTMLButtonElement | null>(null);
+  const pendingFocus = useRef<"heading" | "latest" | "older" | null>(null);
 
-  useEffect(() => () => { inFlight.current?.abort(); }, []);
+  const clearInspection = useCallback(() => {
+    generation.current++;
+    historyFlight.current?.abort();
+    historyFlight.current = null;
+    setInspection({ kind: "empty" });
+  }, []);
+
+  useEffect(() => {
+    const clear = () => clearInspection();
+    window.addEventListener("pagehide", clear);
+    window.addEventListener("pageshow", clear);
+    return () => { inFlight.current?.abort(); historyFlight.current?.abort(); window.removeEventListener("pagehide", clear); window.removeEventListener("pageshow", clear); };
+  }, [clearInspection]);
+
+  useEffect(() => {
+    if (inspection.kind !== "ready") return;
+    if (pendingFocus.current === "heading") headingRef.current?.focus();
+    else if (pendingFocus.current === "older" && !olderRef.current?.disabled) olderRef.current?.focus();
+    else if (pendingFocus.current) latestRef.current?.focus();
+    pendingFocus.current = null;
+    const expire = () => { if (Date.now() >= inspection.page.expires) clearInspection(); };
+    const timer = setTimeout(clearInspection, Math.max(0, inspection.page.expires - Date.now()));
+    window.addEventListener("focus", expire);
+    document.addEventListener("visibilitychange", expire);
+    return () => { clearTimeout(timer); window.removeEventListener("focus", expire); document.removeEventListener("visibilitychange", expire); };
+  }, [inspection, clearInspection]);
+
+  async function inspect(id: DiscoverySession["id"], cursor?: string) {
+    if (inFlight.current) return;
+    historyFlight.current?.abort();
+    const controller = new AbortController();
+    historyFlight.current = controller;
+    const current = ++generation.current;
+    pendingFocus.current = inspection.kind === "ready" && inspection.page.session.id === id ? cursor ? "older" : "latest" : "heading";
+    setInspection({ kind: "loading", id });
+    try {
+      const response = await fetch("/api/opencode-discovery/history", {
+        headers: { "X-Pixel-Discovery": "1", "X-Pixel-History-Session": id, ...(cursor ? { "X-Pixel-History-Cursor": cursor } : {}) },
+        credentials: "same-origin", cache: "no-store", redirect: "error", signal: controller.signal,
+      });
+      const raw: unknown = await response.json();
+      if (controller.signal.aborted || current !== generation.current) return;
+      setInspection(historyInspection(raw, id));
+    } catch {
+      if (!controller.signal.aborted && current === generation.current) setInspection({ kind: "failure", message: "History read failed. No message content is shown." });
+    } finally { if (historyFlight.current === controller) historyFlight.current = null; }
+  }
 
   async function request(operation: "unlock" | "read") {
     if (inFlight.current) return;
+    clearInspection();
     const controller = new AbortController();
     inFlight.current = controller;
     setState({ kind: "working", operation });
@@ -89,7 +160,7 @@ export default function OpenCodeDiscoveryPanel() {
   return (
     <section aria-labelledby="opencode-discovery-heading" aria-busy={working} className="flex min-w-0 flex-col gap-3 rounded-[4px] border border-[var(--border)] bg-[var(--surface)] p-4 text-[var(--muted)]" style={{ fontFamily: "var(--font-inter), Inter, sans-serif" }}>
       <h2 id="opencode-discovery-heading" className="text-[18px] text-[var(--text)]" style={{ fontFamily: "var(--font-vt), VT323, monospace" }}>OpenCode discovery · Read-only</h2>
-      <p className="text-xs leading-relaxed">Manual health and persisted-session metadata only. This does not select, resume, prompt, interrupt, or attach to a session. Records do not establish activity or create monitor floors.</p>
+      <p className="text-xs leading-relaxed">Manual discovery and read-only recorded-message inspection. Selection never resumes, prompts, interrupts, or attaches to a session. Saved records do not establish activity or create monitor floors.</p>
       <form onSubmit={unlock} className="flex min-w-0 flex-col gap-2">
         <label htmlFor="discovery-secret" className="text-sm text-[var(--text)]">Discovery access secret</label>
         <div className="flex min-w-0 flex-col gap-2 sm:flex-row">
@@ -103,8 +174,11 @@ export default function OpenCodeDiscoveryPanel() {
       {result?.kind === "snapshot" && <p className="text-xs">Connection {result.connection.connectionID}. {result.connection.directoryDisplay}. Provider OpenCode {result.health.version}.</p>}
       {page && <>
         <p className="text-xs leading-relaxed">{page.count} records returned. First page only, limit {page.limit}, newest creation first. Includes child and archived records. Missing parents stay unresolved. This page does not prove completeness; provider cursors are not used.</p>
-        {page.count === 0 ? <p className="text-sm text-[var(--text)]">No persisted sessions returned for the configured workspace.</p> : <ul className="grid min-w-0 gap-2" aria-label="Persisted OpenCode session metadata">{page.records.map((record) => <SessionMetadata key={record.id} record={record} />)}</ul>}
+        {page.count === 0 ? <p className="text-sm text-[var(--text)]">No persisted sessions returned for the configured workspace.</p> : <ul className="grid min-w-0 gap-2" aria-label="Persisted OpenCode session metadata">{page.records.map((record) => <SessionMetadata key={record.id} record={record} selected={inspection.kind === "ready" ? inspection.page.session.id === record.id : inspection.kind === "loading" && inspection.id === record.id} disabled={working} onInspect={() => void inspect(record.id)} />)}</ul>}
       </>}
+      {inspection.kind === "loading" && <div><p role="status" aria-live="polite">Reading one bounded recorded-message page. No provider execution starts.</p><button type="button" className={controlClass} onClick={clearInspection}>Clear inspection</button></div>}
+      {inspection.kind === "failure" && <p role="status" aria-live="polite">{inspection.message}</p>}
+      {inspection.kind === "ready" && page && <OpenCodeHistoryPane page={inspection.page} records={page.records} headingRef={headingRef} latestRef={latestRef} olderRef={olderRef} onRead={(id, cursor) => void inspect(id, cursor)} onClear={clearInspection} />}
       <details className="min-w-0 text-xs leading-relaxed">
         <summary className="cursor-pointer py-2 text-[var(--text)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--selection)]">Server configuration keys</summary>
         <p>Required server-only keys. Configure one canonical numeric loopback app origin with port, an independent random secret of at least 43 base64url characters or 32 strong bytes, a numeric loopback OpenCode origin, and an absolute approved workspace.</p>

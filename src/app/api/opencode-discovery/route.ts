@@ -1,16 +1,14 @@
-import { createOpenCodeDiscoveryService } from "@/lib/opencode-discovery.server";
+import { openCodeReadService } from "@/lib/opencode-discovery.server";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-const discovery = createOpenCodeDiscoveryService();
-
 export async function GET(request: Request): Promise<Response> {
-  return discovery.handle(request);
+  return openCodeReadService.handle(request);
 }
 
 export async function POST(request: Request): Promise<Response> {
-  return discovery.handle(request);
+  return openCodeReadService.handle(request);
 }
 
 export function HEAD(): Response {

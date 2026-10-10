@@ -2,7 +2,7 @@
 
 Pixel Office Monitor shows observed OpenCode sessions as a live pixel office. It does not create, resume, prompt, interrupt, or attach to provider sessions.
 
-Settings also provides independent read-only OpenCode connection health and persisted-session metadata discovery. Discovery does not create monitor floors or infer activity from saved records.
+Settings also provides independent read-only OpenCode discovery and a Session Inspector for bounded recorded messages. Discovery and inspection do not create monitor floors or infer activity from saved records.
 
 The local checkout is the implementation baseline as of 2026-10-09. The former GitHub-based v2 drafts are historical proposals, not evidence of available features. [PLAN.md](PLAN.md) separates existing local work from the new roadmap.
 
@@ -121,7 +121,33 @@ Production discovery is now verified on this machine. Its prepared provider URL 
 
 Development allows `127.0.0.1` through Next.js `allowedDevOrigins` for dev-only resources such as HMR. This does not change the discovery API's exact Origin, Host, cookie or credential checks. Restart the development server yourself if it has not reloaded the updated config.
 
-The panel shows health/version and at most 50 metadata records, newest by creation time. Native session, project, parent and workspace IDs, update times, and reported archive times remain visible. Missing parents remain unresolved. Raw directories, provider cursors, unused provider fields, and credentials stay server-side. Rows have no selection, prompt, transcript, interrupt, or terminal action. Another provider version can report healthy while listing remains explicitly unsupported.
+The panel shows health/version and at most 50 metadata records, newest by creation time. Native session, project, parent and workspace IDs, update times, and reported archive times remain visible. Missing parents remain unresolved. Configured directories, provider cursors, unused metadata fields, and credentials stay server-side. Rows offer **Inspect recorded messages**. Another provider version can report healthy while listing remains explicitly unsupported.
+
+### Inspect recorded messages
+
+History requires the confirmed plugin-free OpenCode 1.18.35 connection on port 4097. Its server-private enrollment is already configured on this machine. The profile binds the provider origin, approved directory, Basic credentials, and pinned version. A changed configuration disables history until enrollment is updated. The profile does not detect a non-pure replacement process using the same endpoint and credentials.
+
+After confirming that the provider runs `serve --pure`, update enrollment with:
+
+```powershell
+node scripts/enroll-opencode-history.mjs --approve-plugin-free
+```
+
+This helper updates only `PIXEL_OPENCODE_HISTORY_PROFILE` in ignored `.env.local`. It prints no credentials and changes no processes. Reload your own monitor when server configuration changes.
+
+1. Open `http://127.0.0.1:3001/settings`, unlock discovery, and choose **Check OpenCode**.
+2. Choose **Inspect recorded messages** on a returned session.
+3. Use **Older messages** or **Latest messages** to replace the current page. Use **Clear inspection** to remove it.
+
+Each page contains at most five chronological messages, 50 projected parts, and 64 KiB of serialized data. Text parts and combined tool arguments/output are capped at 4 KiB. Raw provider responses above 256 KiB return an explicit limit error. The initial 20-message design exceeded that cap for 41 of 48 real sessions. The five-message probe accepted five of ten sessions, all with continuations, while five still exceeded the cap. Successful backward paging is verified for one selected real session, not general history coverage.
+
+The Inspector shows escaped text, recorded agent labels, and explicitly recorded tool states. Reasoning, files, media, raw errors, and arbitrary provider metadata are omitted. Configured credentials and known credential patterns are redacted before clipping. Recorded content can still contain private paths or other private text. No media or external link is loaded.
+
+Selection and history remain in memory for at most five minutes, bounded by the owner cookie. New reads, metadata refresh, failure, Clear, expiry, navigation, and page restoration discard the previous page. Relationships use only the loaded metadata page and remain incomplete. Inspection never resumes or prompts a provider session.
+
+History deliberately uses scoped legacy `/session/:id/message` reads. The newer API returned an empty projection for a session with real legacy messages. Legacy GETs can initialize provider-managed location or cache metadata, so read-only inspection is not a zero-filesystem-write guarantee.
+
+Normal port-3001 Inspector passes ten checks against the existing provider, including five latest messages, five older messages, and 17 recorded tool parts for one selected session. Monitor sequence and floor/actor/invocation counts remained unchanged during the window. No owner process was started or stopped. Aggregate evidence is under `Temp/opencode/production-history/`.
 
 ## Log-security housekeeping
 
@@ -162,6 +188,8 @@ Repeat the checks with [verify-phase0.mjs](scripts/verify-phase0.mjs), [audit-ph
 The read-only discovery slice passes 520 tests across 52 files, TypeScript, production build, and lint with zero errors and the same 20 warnings. [verify-discovery.mjs](scripts/verify-discovery.mjs) passes 30 runtime/browser checks, including 41 real persisted records, credential isolation, desktop/mobile states, and unchanged monitor sequence and floors. It creates no provider sessions or prompts. It starts only isolated verification servers on ports 3011, 4097, and 4098, then confirms cleanup. Evidence is under ignored `Temp/opencode/discovery/`.
 
 Use `node scripts/verify-phase0.mjs discovery` before the discovery browser check. Verification sets `PIXEL_VERIFY_ISOLATED=1`, writes Next.js output under ignored `Temp/opencode/next-verification/`, and uses a separate generated TypeScript config. Normal production output remains `.next`. The verifier checks that production build identity and manifests stay unchanged. Do not run an ordinary shared-output production build alongside an existing user-owned production server.
+
+Session Inspector passes 555 tests across 53 files, TypeScript, production build, and lint with zero errors and 20 existing warnings. Verification uses `node scripts/verify-phase0.mjs history`, followed by `node scripts/verify-opencode-history.mjs`. The latter uses the existing approved provider, an isolated monitor on 3011, and a fixture provider on 4198. It creates no provider sessions or prompts. Forty-one checks cover real paging, shared route admission, expiry, late-response disposal, actual navigation/back, inert content, desktop/mobile layout, storage isolation, and monitor sequence/entity-count continuity. Only fixture screenshots and aggregate reports are retained under `Temp/opencode/history/`. `node scripts/verify-opencode-history.mjs --production` verifies the already running normal panel without restarting owner processes. Run the two browser modes sequentially. The harness tracks its own Chrome child and confirms cleanup.
 
 ## Generate and review assets
 

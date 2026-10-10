@@ -71,7 +71,8 @@ try {
   check('Production matches native session IDs and count', dto.sessions.count === native.data.length && dto.sessions.records.every(record => native.data.some(row => row.id === record.id)));
   const serialized = JSON.stringify(dto);
   check('Private credentials and directory absent from browser DTO', ![env.PIXEL_DISCOVERY_ACCESS_SECRET, env.PIXEL_OPENCODE_PASSWORD, env.PIXEL_OPENCODE_DIRECTORY].filter(Boolean).some(value => serialized.includes(value)));
-  check('Selection and provider actions remain absent', await page.getByRole('list', { name: 'Persisted OpenCode session metadata' }).getByRole('button').count() === 0);
+   const list = page.getByRole('list', { name: 'Persisted OpenCode session metadata' });
+   check('Metadata offers only read-only inspection', await list.getByRole('button').count() === dto.sessions.count && await list.getByRole('button', { name: 'Inspect recorded messages', exact: true }).count() === dto.sessions.count);
   check('Discovery sends no monitor ingest requests', monitorWrites === 0);
   const after = await monitorSummary(app.origin);
   report.monitorStateUnchangedDuringWindow = JSON.stringify(before) === JSON.stringify(after);
