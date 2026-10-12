@@ -2,6 +2,7 @@
 
 import { memo } from "react";
 import Image from "next/image";
+import { getAgentAnimationConfig } from "@/lib/agent-animations";
 import { getAgentProps } from "@/lib/agent-props";
 import { getAgentVisualIdentity, resolveAgentAccent } from "@/lib/agent-visual-identity";
 
@@ -14,12 +15,17 @@ interface DeskDecorProps {
 /**
  * DeskDecor — per-cubicle decorations for the roster room. Each roster agent
  * has its own role props (wrench, books, shield...) rendered on the desk
- * surface flanking the monitor, in front of the plant. Static while the desk
- * sleeps; gentle CSS float (off-main-thread) while working.
+ * surface flanking the monitor, in front of the plant. One configured primary
+ * prop can mark active work; secondary props stay still.
  */
 function DeskDecorInner({ agentKey, scale = 1, isWorking = false }: DeskDecorProps) {
   const config = getAgentProps(agentKey);
+  const animationConfig = getAgentAnimationConfig(agentKey);
   const identity = getAgentVisualIdentity(agentKey);
+  const animatePrimaryProp =
+    isWorking &&
+    animationConfig.hasPropAnimation === true &&
+    animationConfig.working === "animate-prop-sync";
   if (config.items.length === 0) return null;
 
   return (
@@ -32,7 +38,7 @@ function DeskDecorInner({ agentKey, scale = 1, isWorking = false }: DeskDecorPro
           top: 30 * scale,
           width: Math.max(2, 3 * scale),
           height: 8 * scale,
-          backgroundColor: resolveAgentAccent(agentKey, isWorking ? "#22C55E" : undefined),
+          backgroundColor: resolveAgentAccent(agentKey, isWorking ? "var(--working)" : undefined),
           boxShadow: `0 0 ${Math.max(1, 2 * scale)}px ${identity.accent}`,
         }}
       />
@@ -44,11 +50,11 @@ function DeskDecorInner({ agentKey, scale = 1, isWorking = false }: DeskDecorPro
           <Image
             key={`${agentKey}-decor-${i}`}
             src={prop.src}
-            alt={prop.alt}
+            alt=""
             width={prop.w}
             height={prop.h}
             loading="eager"
-            className={`absolute ${isWorking ? "animate-prop-float" : ""}`}
+            className={`absolute ${animatePrimaryProp && i === 0 ? "animate-prop-sync" : ""}`}
             data-role-accent={identity.accent}
             style={{
               left: rightSide ? 64 * scale - (3 + prop.w) * scale : 3 * scale,
@@ -56,7 +62,6 @@ function DeskDecorInner({ agentKey, scale = 1, isWorking = false }: DeskDecorPro
               width: w,
               height: h,
               imageRendering: "pixelated",
-              animationDelay: isWorking ? `${i * 300}ms` : undefined,
             }}
           />
         );

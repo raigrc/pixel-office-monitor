@@ -1,4 +1,6 @@
 import * as THREE from 'three';
+import { COZY_THEME } from '../cozy-theme';
+import { createCozyMaterial } from './cozy-materials';
 
 export type PlanetPreset = 'luna' | 'mars' | 'terra';
 
@@ -40,12 +42,7 @@ const PLANET_PRESETS: Record<PlanetPreset, {
     noisePersistence: 0.55,
   },
   terra: {
-    colors: [
-      new THREE.Color(0x0d3b1a),
-      new THREE.Color(0x1a5c2a),
-      new THREE.Color(0x2d7a3a),
-      new THREE.Color(0x4a9b5a),
-    ],
+    colors: COZY_THEME.scene.terrainBands.map((color) => new THREE.Color(color)),
     heights: [0, 0.3, 1.0, 2.5],
     noiseScale: 0.025,
     noiseOctaves: 3,
@@ -160,10 +157,7 @@ export function createTerrainGeometry(config: TerrainConfig): THREE.BufferGeomet
 }
 
 export function createTerrainMaterial(): THREE.MeshStandardMaterial {
-  return new THREE.MeshStandardMaterial({
-    vertexColors: true,
-    roughness: 0.9,
-    metalness: 0.05,
-    flatShading: false,
-  });
+  const material = createCozyMaterial({ recipe: 'matte', color: COZY_THEME.ui.text });
+  material.vertexColors = true;
+  return material;
 }

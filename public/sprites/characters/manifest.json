@@ -1,0 +1,298 @@
+{
+  "version": 1,
+  "fallbackKey": "fallback",
+  "directions": [
+    "down",
+    "left",
+    "right",
+    "up"
+  ],
+  "characters": {
+    "ai-systems": {
+      "path": "/sprites/characters/ai-systems.png",
+      "width": 1152,
+      "height": 192,
+      "frames": 96,
+      "frameWidth": 48,
+      "frameHeight": 48,
+      "anchor": {
+        "x": 24,
+        "y": 46
+      },
+      "sha256": "6f4e1c3abc5a9d46db12d6861ffd9e87cfb0a37bf23464a51071049d1160ebb0"
+    },
+    "architect": {
+      "path": "/sprites/characters/architect.png",
+      "width": 1152,
+      "height": 192,
+      "frames": 96,
+      "frameWidth": 48,
+      "frameHeight": 48,
+      "anchor": {
+        "x": 24,
+        "y": 46
+      },
+      "sha256": "08b9142d22f0fff7d0050d1db7e49298d43e8a2c78b6d33ad4b095fe407adb80"
+    },
+    "automation-engineer": {
+      "path": "/sprites/characters/automation-engineer.png",
+      "width": 1152,
+      "height": 192,
+      "frames": 96,
+      "frameWidth": 48,
+      "frameHeight": 48,
+      "anchor": {
+        "x": 24,
+        "y": 46
+      },
+      "sha256": "5c525ac5b9bf5242a5886de751ed2c400b14a88342c6508dc34979bd93abe955"
+    },
+    "build": {
+      "path": "/sprites/characters/build.png",
+      "width": 1152,
+      "height": 192,
+      "frames": 96,
+      "frameWidth": 48,
+      "frameHeight": 48,
+      "anchor": {
+        "x": 24,
+        "y": 46
+      },
+      "sha256": "5de11ddcc35fbe4575ddc9d47c3b2543b212f76cb101b265567514a1cf2ced6b"
+    },
+    "compaction": {
+      "path": "/sprites/characters/compaction.png",
+      "width": 1152,
+      "height": 192,
+      "frames": 96,
+      "frameWidth": 48,
+      "frameHeight": 48,
+      "anchor": {
+        "x": 24,
+        "y": 46
+      },
+      "sha256": "fc83090ea266fb2ab8799156c457179a3fb7b2ee583fd611cfc7547ddc6cadff"
+    },
+    "devops": {
+      "path": "/sprites/characters/devops.png",
+      "width": 1152,
+      "height": 192,
+      "frames": 96,
+      "frameWidth": 48,
+      "frameHeight": 48,
+      "anchor": {
+        "x": 24,
+        "y": 46
+      },
+      "sha256": "2fb8d7795693539804b834eb1e7cb0862f4162b287854e7a8d57debd1870dca4"
+    },
+    "documentation": {
+      "path": "/sprites/characters/documentation.png",
+      "width": 1152,
+      "height": 192,
+      "frames": 96,
+      "frameWidth": 48,
+      "frameHeight": 48,
+      "anchor": {
+        "x": 24,
+        "y": 46
+      },
+      "sha256": "272b782c1db6f2801336946dac61c4e5c634eff6cebc94e38332230fe654b531"
+    },
+    "explore": {
+      "path": "/sprites/characters/explore.png",
+      "width": 1152,
+      "height": 192,
+      "frames": 96,
+      "frameWidth": 48,
+      "frameHeight": 48,
+      "anchor": {
+        "x": 24,
+        "y": 46
+      },
+      "sha256": "959b278e2abdbc5381c145880b46500dc383cff242a96dda16ff1dd8ae76878d"
+    },
+    "fallback": {
+      "path": "/sprites/characters/fallback.png",
+      "width": 1152,
+      "height": 192,
+      "frames": 96,
+      "frameWidth": 48,
+      "frameHeight": 48,
+      "anchor": {
+        "x": 24,
+        "y": 46
+      },
+      "sha256": "a11ce0bc3bd842d7afda0385d9b23fbf8c0f1329c8ff0b9403e5ce153908bb93"
+    },
+    "general": {
+      "path": "/sprites/characters/general.png",
+      "width": 1152,
+      "height": 192,
+      "frames": 96,
+      "frameWidth": 48,
+      "frameHeight": 48,
+      "anchor": {
+        "x": 24,
+        "y": 46
+      },
+      "sha256": "d7fd4c27b60e3aab4d6964d53c740ffc057fa88695bfcd02b01c131611ecd228"
+    },
+    "intern": {
+      "path": "/sprites/characters/intern.png",
+      "width": 1152,
+      "height": 192,
+      "frames": 96,
+      "frameWidth": 48,
+      "frameHeight": 48,
+      "anchor": {
+        "x": 24,
+        "y": 46
+      },
+      "sha256": "0023056b275a79d0aad05b68acefe814878afe508e2edee55ece05fc813bdae8"
+    },
+    "orchestrator": {
+      "path": "/sprites/characters/orchestrator.png",
+      "width": 1152,
+      "height": 192,
+      "frames": 96,
+      "frameWidth": 48,
+      "frameHeight": 48,
+      "anchor": {
+        "x": 24,
+        "y": 46
+      },
+      "sha256": "d750a51d529ae883a24a30179f2ccc6c9cfde3f295564f95135c1566f979ffca"
+    },
+    "plan": {
+      "path": "/sprites/characters/plan.png",
+      "width": 1152,
+      "height": 192,
+      "frames": 96,
+      "frameWidth": 48,
+      "frameHeight": 48,
+      "anchor": {
+        "x": 24,
+        "y": 46
+      },
+      "sha256": "eacd1a68ef0b4a73fa19b397da7bb58e84311316710b318d2bd2f4139fc65832"
+    },
+    "project-manager": {
+      "path": "/sprites/characters/project-manager.png",
+      "width": 1152,
+      "height": 192,
+      "frames": 96,
+      "frameWidth": 48,
+      "frameHeight": 48,
+      "anchor": {
+        "x": 24,
+        "y": 46
+      },
+      "sha256": "bcc585b78625749cea90b55f4868e4c66a7def022ad4642abfa0c1f2eb30d80b"
+    },
+    "qa-engineer": {
+      "path": "/sprites/characters/qa-engineer.png",
+      "width": 1152,
+      "height": 192,
+      "frames": 96,
+      "frameWidth": 48,
+      "frameHeight": 48,
+      "anchor": {
+        "x": 24,
+        "y": 46
+      },
+      "sha256": "26b85fe4fe17380bc02b85096095d477b28adfcb7a99c606831510855c654f75"
+    },
+    "researcher": {
+      "path": "/sprites/characters/researcher.png",
+      "width": 1152,
+      "height": 192,
+      "frames": 96,
+      "frameWidth": 48,
+      "frameHeight": 48,
+      "anchor": {
+        "x": 24,
+        "y": 46
+      },
+      "sha256": "a167db7077d13bf59af0958bc16be4b84033fae381f77459dd4f3fdfc68ab2a0"
+    },
+    "scout": {
+      "path": "/sprites/characters/scout.png",
+      "width": 1152,
+      "height": 192,
+      "frames": 96,
+      "frameWidth": 48,
+      "frameHeight": 48,
+      "anchor": {
+        "x": 24,
+        "y": 46
+      },
+      "sha256": "b4f9f8734f64987dd5332710fdbf8d6ca473b218ba2a59a8450dabea56668f06"
+    },
+    "security-reviewer": {
+      "path": "/sprites/characters/security-reviewer.png",
+      "width": 1152,
+      "height": 192,
+      "frames": 96,
+      "frameWidth": 48,
+      "frameHeight": 48,
+      "anchor": {
+        "x": 24,
+        "y": 46
+      },
+      "sha256": "31e7a8d4e097faf96a5af93730480b161fdcebf3fce5b3cbffd777e4d0102d1d"
+    },
+    "senior-engineer": {
+      "path": "/sprites/characters/senior-engineer.png",
+      "width": 1152,
+      "height": 192,
+      "frames": 96,
+      "frameWidth": 48,
+      "frameHeight": 48,
+      "anchor": {
+        "x": 24,
+        "y": 46
+      },
+      "sha256": "9ba2b921d4dbcffa874b4ca822c3a055fd721fbc024161ac04811bd435ee57d9"
+    },
+    "summary": {
+      "path": "/sprites/characters/summary.png",
+      "width": 1152,
+      "height": 192,
+      "frames": 96,
+      "frameWidth": 48,
+      "frameHeight": 48,
+      "anchor": {
+        "x": 24,
+        "y": 46
+      },
+      "sha256": "3aeb711b5b418a3ddafd1e70d5005f106caaf9fc423158cab050811627ebc4b6"
+    },
+    "title": {
+      "path": "/sprites/characters/title.png",
+      "width": 1152,
+      "height": 192,
+      "frames": 96,
+      "frameWidth": 48,
+      "frameHeight": 48,
+      "anchor": {
+        "x": 24,
+        "y": 46
+      },
+      "sha256": "3f78b5cdd44a9b709fc409f38ee32bae576ddf2bb8f7cc64fad72b534954063e"
+    },
+    "unknown": {
+      "path": "/sprites/characters/unknown.png",
+      "width": 1152,
+      "height": 192,
+      "frames": 96,
+      "frameWidth": 48,
+      "frameHeight": 48,
+      "anchor": {
+        "x": 24,
+        "y": 46
+      },
+      "sha256": "30d0b30c82be0b623df4aa9308cf74524a796d111c967f70c9bcd18ff276c613"
+    }
+  }
+}

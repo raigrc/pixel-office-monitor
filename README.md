@@ -22,7 +22,7 @@ Exactly five documents define the project:
 
 ## Run the local monitor
 
-Use Node.js 20.9 or later and npm. The installed Next.js 16.3.4 guide requires Node.js 20.9 or later. OpenCode and an externally installed monitor plugin supply real events.
+Use Node.js 22 or later and npm for the setup helpers. Next.js 16.3.4 itself requires Node.js 20.9 or later. OpenCode and an externally installed monitor plugin supply real events.
 
 1. Open a terminal in `C:\Development\pixel-office-monitor`.
 2. Install dependencies.
@@ -78,6 +78,49 @@ npm run start -- --hostname 127.0.0.1 -p 3001
 ```
 
 Set `NEXT_PUBLIC_*` values before building. Next.js inlines them into the browser bundle. Changing `.env.local` afterward does not update an existing production bundle.
+
+## Continue on a new Mac
+
+The current delivery branch is `fix/3d-colony-v1`. Clone that branch rather than the older default branch:
+
+```sh
+git clone --branch fix/3d-colony-v1 https://github.com/raigrc/pixel-office-monitor.git
+cd pixel-office-monitor
+npm ci
+```
+
+The branch includes application source, tests, sprite source layers, generated assets, generators, the five primary docs, and the read-only Session Inspector. Native history hardening and Prompt Control remain planned.
+
+1. Install Node.js 22 or later and OpenCode. Discovery/history currently supports OpenCode 1.18.35. Python with Pillow is needed for sprite tests and regeneration. The tests invoke `python`; a project virtual environment supplies that command on Mac:
+
+```sh
+python3 -m venv .venv
+source .venv/bin/activate
+python -m pip install Pillow
+```
+2. Create private `.env.local` using the monitor keys above, or restore it from the separate private backup. Generate fresh device credentials with `node scripts/rotate-monitor-token.mjs --apply`; it updates the three stored monitor keys without printing values. Do this before starting the monitor or producer.
+3. Restore the external monitor plugin to OpenCode's configured global plugin directory, commonly `~/.config/opencode/plugins/pixel-monitor.js`. Review any Windows-specific paths in the copied plugin and personal configuration. The plugin is not included in this repository.
+4. Start the monitor with `npm run dev -- --hostname 127.0.0.1 -p 3001`.
+5. From this checkout, load the producer token without printing it and start an instrumented OpenCode TUI:
+
+```sh
+export PIXEL_MONITOR_URL=http://127.0.0.1:3001/api/ingest
+export PIXEL_MONITOR_TOKEN="$(node -e 'const fs=require("node:fs");const {parseEnv}=require("node:util");const env=parseEnv(fs.readFileSync(".env.local","utf8"));process.stdout.write(env.MONITOR_TOKEN||env.PIXEL_MONITOR_TOKEN||"");')"
+opencode
+```
+
+6. For discovery, run `node scripts/configure-opencode-discovery.mjs --apply` before the monitor starts, or reload the monitor after configuration changes. Update `PIXEL_OPENCODE_DIRECTORY` to the actual Mac checkout path. Configure the private provider password in the provider terminal to match `.env.local`, then start a separate loopback `serve --pure` server on 4097. Re-enroll with `node scripts/enroll-opencode-history.mjs --approve-plugin-free` after confirming that connection. Do not reuse a Windows enrollment digest after changing directory or credentials.
+7. Verify an ordinary OpenCode task produces accepted ingest, a visible session, and SSE LIVE. The separate pure discovery server does not load the external monitor plugin.
+
+GitHub does not carry `.env.local`, ignored asset backups, personal OpenCode configuration, authentication data, or native session databases. Transfer the separate private backup through a trusted private channel. Native sessions belong to OpenCode, not this monitor. Restore or import them separately using the provider's supported workflow; do not overwrite an existing Mac database without a separate backup.
+
+`align-monitor-producer.mjs`, the User-registry diagnostic, and the command-gate harness are Windows-oriented. On Mac, use the shell exports above and run `npm test`, `npx tsc --noEmit`, `npm run lint`, and `npm run build` directly. The diagnostic's installed-plugin path currently points to the Windows owner profile.
+
+### Windows private backup status
+
+The verified private ZIP is under ignored `Temp/opencode/mac-migration/windows-step7-20261012T163816Z-p1cz9rii/windows-step7-private.zip`. It contains 631 files covering project environment files, owner asset backups, personal OpenCode configuration/plugins/agents/skills, authentication, and small legacy storage files. Transfer it separately from GitHub. It contains credentials and private data.
+
+The approximately 8 GB native SQLite database is not included in that verified ZIP. Online snapshot/validation exceeded its deadline, and free space prevents another full duplicate. An unverified snapshot remains under `Temp/opencode/mac-migration/windows-step7-20261012T162656Z-c009k5v9/sqlite-attempts/`. Structural checks passed but integrity validation did not finish. Do not treat it as a verified native-history backup or erase the Windows original. Native-history migration remains open.
 
 ## Current monitor behavior
 
@@ -215,3 +258,28 @@ See [Design](docs/DESIGN.md) for generator ownership and [Character sprite refer
 5. If 3D replays arrivals or actors disappear at close zoom, record a fresh-browser reproduction. Existing hydration and bounds fixes have code and unit coverage, but current browser replay and occlusion acceptance remain unverified.
 
 Do not paste token-bearing URLs, logs, raw prompts, or credentials into reports. Existing ignored logs and tracked screenshots remain user data. Ignore rules do not untrack files already in Git.
+
+### Resolve ingest 401 after token rotation
+
+The current incident showed that `.env.local` monitor keys authenticate, while the inherited and Windows User `PIXEL_MONITOR_TOKEN` were stale and rejected. The installed plugin captures its token at initialization. A truthy inherited token overrides its file fallback, so changing `.env.local` alone does not fix an existing producer.
+
+`node scripts/audit-monitor-connection.mjs` compares credentials privately and probes authentication with malformed JSON. An authenticated probe returns 400 without creating an event. A rejected credential returns 401. Reports contain only source labels, equality flags, status codes, and state counts.
+
+`node scripts/align-monitor-producer.mjs --apply` aligns only Windows User `PIXEL_MONITOR_TOKEN` with the validated monitor token. It preserves discovery credentials, checks authentication, and prints no values. This alignment is applied on this machine. Existing process environments remain unchanged.
+
+Exit the affected plugin-hosting OpenCode process yourself. In the PowerShell shell that starts it, reload the saved value and reopen OpenCode:
+
+```powershell
+$env:PIXEL_MONITOR_TOKEN = [Environment]::GetEnvironmentVariable("PIXEL_MONITOR_TOKEN", "User")
+opencode
+```
+
+Leave Pixel Monitor running. If the client attaches to an existing server, that server is the plugin host and must also receive the corrected environment when the owner reinitializes it. Actual event acceptance and floor rendering remain unverified until a corrected producer emits real events. No diagnostic creates synthetic activity to hide the failure.
+
+From Command Prompt, refresh and launch inside the same PowerShell child so a stale parent cannot pass the old token again:
+
+```cmd
+powershell.exe -NoProfile -Command "$env:PIXEL_MONITOR_TOKEN=[Environment]::GetEnvironmentVariable('PIXEL_MONITOR_TOKEN','User'); opencode.cmd --continue"
+```
+
+The installed CLI confirms that `--continue` resumes the last session. The shell-refresh pattern is verified: the inherited credential changes from rejected state401/ingest401 to state200/malformed ingest400 without creating events. Keep the separate `serve --pure` discovery server plugin-free. Do not attach the monitoring client to that pure server expecting external-plugin events.

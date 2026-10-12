@@ -1,0 +1,74 @@
+{
+  "version": 1,
+  "ui": {
+    "canvas": "#171411",
+    "surface": "#211C18",
+    "raised": "#2B241F",
+    "elevated": "#332A23",
+    "border": "#4A3E34",
+    "strongBorder": "#655445",
+    "text": "#F3EBDD",
+    "muted": "#B8AA99",
+    "dim": "#887C6F"
+  },
+  "semantic": {
+    "selection": "#79A8C7",
+    "working": "#7FA96B",
+    "error": "#DE7467",
+    "success": "#58AA91",
+    "waiting": "#D4A553",
+    "idle": "#887C6F",
+    "delegationActive": "#B18AC6",
+    "delegationPending": "#7E6A86",
+    "delegationToken": "#E7D7EC"
+  },
+  "environment": {
+    "floor": "#D8C8A7",
+    "wood": "#8B6044",
+    "woodDark": "#634634",
+    "lamp": "#EDC46A",
+    "monitorIdle": "#91B4BD",
+    "plant": "#718D67",
+    "metal": "#8D8379",
+    "night": "#171411"
+  },
+  "scene": {
+    "terrainBands": ["#29372A", "#354736", "#425844", "#566A52"],
+    "scatter": "#596353",
+    "terraSky": {
+      "dayZenith": "#6F94A3",
+      "dayHorizon": "#B6C8BE",
+      "dayGround": "#344A38",
+      "dusk": "#B97858",
+      "nightZenith": "#151D2B",
+      "nightHorizon": "#26354A",
+      "nightGround": "#101822",
+      "nightAmbient": "#899BB8",
+      "nightFill": "#9BAFD0"
+    }
+  },
+  "sessionPalette": ["#A86F55", "#718B73", "#6F819C", "#8D758E", "#9A835C", "#668886"],
+  "materials": {
+    "matte": {
+      "roughness": 0.9,
+      "metalness": 0.05
+    },
+    "wood": {
+      "roughness": 0.82,
+      "metalness": 0.02
+    },
+    "paintedMetal": {
+      "roughness": 0.82,
+      "metalness": 0.18
+    },
+    "brushedMetal": {
+      "roughness": 0.62,
+      "metalness": 0.28
+    },
+    "softGlow": {
+      "roughness": 0.38,
+      "metalness": 0.2,
+      "emissiveIntensity": 0.45
+    }
+  }
+}

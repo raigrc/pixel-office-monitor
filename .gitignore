@@ -17,6 +17,7 @@
 # python generators
 __pycache__/
 *.py[cod]
+.venv/
 
 # next.js
 /.next/

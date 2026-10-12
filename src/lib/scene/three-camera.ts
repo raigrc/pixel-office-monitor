@@ -1,5 +1,8 @@
 import * as THREE from 'three';
 
+export const THREE_CAMERA_NEAR = 0.1;
+export const MIN_CAMERA_DISTANCE = 5;
+
 export interface CameraState {
   azimuth: number;
   polar: number;
@@ -29,9 +32,10 @@ export class ThreeCamera {
   private idleTimer: number | null = null;
   private idleAnimation: number | null = null;
   private reducedMotion = false;
+  private paused = false;
   private userInteracted = false;
 
-  private readonly MIN_DISTANCE = 5;
+  private readonly MIN_DISTANCE = MIN_CAMERA_DISTANCE;
   private readonly MAX_DISTANCE = 80;
   private readonly MIN_POLAR = 0.15;
   private readonly MAX_POLAR = Math.PI / 2 - 0.05;
@@ -68,9 +72,12 @@ export class ThreeCamera {
     window.removeEventListener('blur', this.cancelGesture);
   }
 
-  private onContextMenu = (event: Event): void => event.preventDefault();
+  private onContextMenu = (event: Event): void => {
+    if (!this.paused) event.preventDefault();
+  };
 
   private onPointerDown = (event: PointerEvent): void => {
+    if (this.paused) return;
     this.userInteracted = true;
     try {
       this.domElement.setPointerCapture(event.pointerId);
@@ -105,6 +112,7 @@ export class ThreeCamera {
   };
 
   private onPointerMove = (event: PointerEvent): void => {
+    if (this.paused) return;
     if (this.activePointers.has(event.pointerId)) {
       this.activePointers.set(event.pointerId, new THREE.Vector2(event.clientX, event.clientY));
     }
@@ -138,6 +146,7 @@ export class ThreeCamera {
   };
 
   private onPointerUp = (event: PointerEvent): void => {
+    if (this.paused) return;
     this.activePointers.delete(event.pointerId);
     this.pinchDistance = null;
     if (this.activePointers.size === 1) {
@@ -162,6 +171,7 @@ export class ThreeCamera {
   };
 
   private onWheel = (event: WheelEvent): void => {
+    if (this.paused) return;
     event.preventDefault();
     this.userInteracted = true;
     const delta = event.deltaY > 0 ? 1.1 : 1 / 1.1;
@@ -229,6 +239,7 @@ export class ThreeCamera {
   }
 
   private resetIdleTimer(): void {
+    if (this.paused) return;
     this.lastInteractionTime = performance.now();
     if (this.idleTimer !== null) {
       clearTimeout(this.idleTimer);
@@ -319,6 +330,17 @@ export class ThreeCamera {
       this.idleAnimation = null;
       this.applyTargetImmediately();
     }
+  }
+
+  setPaused(paused: boolean): void {
+    if (this.paused === paused) return;
+    this.paused = paused;
+    if (!paused) return;
+    this.cancelGesture();
+    if (this.idleTimer !== null) clearTimeout(this.idleTimer);
+    if (this.idleAnimation !== null) cancelAnimationFrame(this.idleAnimation);
+    this.idleTimer = null;
+    this.idleAnimation = null;
   }
 
   private applyTargetImmediately(): void {

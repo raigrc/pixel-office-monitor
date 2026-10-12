@@ -21,7 +21,6 @@ export default class ErrorBoundary extends React.Component<Props, State> {
   }
 
   componentDidCatch(error: unknown, info: unknown) {
-    // eslint-disable-next-line no-console
     console.error("[ErrorBoundary]", error, info);
   }
 
@@ -30,21 +29,20 @@ export default class ErrorBoundary extends React.Component<Props, State> {
       if (this.props.fallback) return this.props.fallback;
       return (
         <div
-          className="rounded-[6px] border-2 bg-[#1E293B] px-4 py-6 text-center"
-          style={{ borderColor: "#EF4444" }}
+          className="rounded-[4px] border-2 border-[var(--error)] bg-[var(--surface)] px-4 py-6 text-center"
           role="alert"
         >
           <p
-            className="text-[16px] font-bold text-[#EF4444]"
+            className="text-[16px] font-bold text-[var(--error)]"
             style={{ fontFamily: "var(--font-vt), VT323, monospace" }}
           >
-            ◩ office glitch — {this.state.message?.slice(0, 80) ?? "unknown error"}
+            Office error: {this.state.message?.slice(0, 80) ?? "unknown error"}
           </p>
           <button
             type="button"
             onClick={() => this.setState({ hasError: false, message: undefined })}
-            className="mt-3 inline-flex items-center rounded-md border bg-[#0F172A] px-3 py-1.5 text-xs font-medium text-[#F1F5F9] transition-colors duration-200 cursor-pointer hover:bg-[#1E293B] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#3B82F6] focus-visible:ring-offset-2 focus-visible:ring-offset-[#0F172A]"
-            style={{ borderColor: "#334155", fontFamily: "var(--font-inter), Inter, sans-serif" }}
+            className="mt-3 inline-flex min-h-11 cursor-pointer items-center rounded-[4px] border border-[var(--border)] bg-[var(--canvas)] px-3 text-xs font-medium text-[var(--text)] transition-colors duration-200 hover:bg-[var(--raised)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--selection)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--canvas)]"
+            style={{ fontFamily: "var(--font-inter), Inter, sans-serif" }}
           >
             Try again
           </button>

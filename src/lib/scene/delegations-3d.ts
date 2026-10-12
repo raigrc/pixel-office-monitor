@@ -1,5 +1,12 @@
 import * as THREE from "three";
 import type { DirectDelegation } from "@/lib/activity/activity-model";
+import { COZY_THEME } from "@/lib/cozy-theme";
+
+export const DELEGATION_SEMANTIC_COLORS = {
+  active: COZY_THEME.semantic.delegationActive,
+  pending: COZY_THEME.semantic.delegationPending,
+  token: COZY_THEME.semantic.delegationToken,
+} as const;
 
 interface DelegationVisual {
   relation: DirectDelegation;
@@ -32,14 +39,17 @@ export class Delegations3D {
       const existing = this.visuals.get(relation.invocationId);
       if (existing) {
         existing.relation = relation;
-        const pathColor = relation.lifecycle === "started" ? 0x58c8e8 : 0xe8a94f;
-        const tokenColor = relation.lifecycle === "started" ? 0xd9f8ff : 0xffedb3;
-        existing.lineMaterial.color.setHex(pathColor);
-        existing.tokenMaterial.color.setHex(tokenColor);
+        const pathColor = relation.lifecycle === "started"
+          ? DELEGATION_SEMANTIC_COLORS.active
+          : DELEGATION_SEMANTIC_COLORS.pending;
+        existing.lineMaterial.color.set(pathColor);
+        existing.tokenMaterial.color.set(DELEGATION_SEMANTIC_COLORS.token);
         continue;
       }
-      const pathColor = relation.lifecycle === "started" ? 0x58c8e8 : 0xe8a94f;
-      const tokenColor = relation.lifecycle === "started" ? 0xd9f8ff : 0xffedb3;
+      const pathColor = relation.lifecycle === "started"
+        ? DELEGATION_SEMANTIC_COLORS.active
+        : DELEGATION_SEMANTIC_COLORS.pending;
+      const tokenColor = DELEGATION_SEMANTIC_COLORS.token;
       const lineMaterial = new THREE.LineBasicMaterial({ color: pathColor, transparent: true, opacity: 0.88, depthTest: false });
       const line = new THREE.LineSegments(new THREE.BufferGeometry(), lineMaterial);
       const tokenMaterial = new THREE.MeshBasicMaterial({ color: tokenColor, depthTest: false });

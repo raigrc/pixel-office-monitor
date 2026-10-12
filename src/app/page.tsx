@@ -93,6 +93,7 @@ export default function Home() {
     reconnectAttempt,
     retry: handleSseRetry,
     lastEventAt: streamLastEventAt,
+    isHydrated: streamHydrated,
   } = useMonitorState();
 
   const [showPromptPreview, setShowPromptPreview] = useState<boolean>(true);
@@ -585,19 +586,20 @@ export default function Home() {
             : ""}
         </div>
         {commandMessage && (
-          <div className="fixed left-1/2 top-16 z-40 -translate-x-1/2 rounded-[4px] border border-[#334155] bg-[#0F172A] px-4 py-2 text-sm text-[#E2E8F0]" role="status">
+          <div className="fixed left-1/2 top-16 z-40 flex min-h-11 -translate-x-1/2 items-center rounded-[4px] border-2 border-[var(--strong-border)] bg-[var(--canvas)] px-4 text-sm text-[var(--text)] shadow-[3px_3px_0_var(--surface)]" role="status">
             {commandMessage}
-            <button type="button" onClick={() => setCommandMessage(null)} className="ml-3 cursor-pointer text-[#60A5FA]" aria-label="Dismiss message">Dismiss</button>
+            <button type="button" onClick={() => setCommandMessage(null)} className="ml-3 min-h-11 cursor-pointer text-[var(--selection)]" aria-label="Dismiss message">Dismiss</button>
           </div>
         )}
 
-        <section aria-label="Office grid" className={`min-h-0 flex-1 overflow-hidden ${isSidebarOpen ? "lg:ml-[22rem]" : ""}`}>
+        <section aria-label="Office grid" className={`min-h-0 flex-1 overflow-hidden ${isSidebarOpen ? "lg:ml-[18rem]" : ""}`}>
           <SceneViewport
             className="h-full w-full"
             world={world}
             activity={activity}
             activeSessionId={activeId}
             selectedActorId={selectedActorId}
+            streamHydrated={streamHydrated}
             sidebarOpen={isSidebarOpen}
             onAgentClick={(actorId) => {
               handleActorSelect(actorId);
@@ -606,10 +608,10 @@ export default function Home() {
             {displayedFloors.length === 0 ? (
               <div className="absolute inset-0 flex items-center justify-center bg-transparent">
                 <p
-                  className="text-center text-[#64748B]"
+                  className="text-center text-[var(--muted)]"
                   style={{ fontFamily: "var(--font-vt), VT323, monospace", fontSize: "16px" }}
                 >
-                  ◧ no active floor
+                  No active floor
                 </p>
               </div>
             ) : (
@@ -630,8 +632,8 @@ export default function Home() {
 
         <footer className="pointer-events-none absolute inset-x-0 bottom-0 z-40 flex items-center justify-center gap-3 px-3 py-1">
           <p
-            className="text-center text-[11px] tracking-widest text-[#475569]"
-            style={{ fontFamily: "var(--font-inter), Inter, sans-serif", textShadow: "0 1px 0 rgba(11,18,32,0.8)" }}
+            className="rounded-[3px] bg-[var(--canvas)] px-2 text-center text-[11px] tracking-widest text-[var(--muted)]"
+            style={{ fontFamily: "var(--font-inter), Inter, sans-serif" }}
           >
             {displayedFloors.length} floor{displayedFloors.length !== 1 ? "s" : ""} •{" "}
             {displayedFloors.reduce((acc, f) => acc + f.cubicles.length, 0)} cubicles
@@ -639,31 +641,31 @@ export default function Home() {
           </p>
           <a
             href="/settings"
-            className="pointer-events-auto text-[11px] tracking-widest text-[#475569] underline-offset-4 hover:text-[#94A3B8] hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#3B82F6] focus-visible:ring-offset-2 focus-visible:ring-offset-[#0F172A] rounded px-1 py-0.5"
+            className="pointer-events-auto inline-flex min-h-11 items-center gap-1.5 rounded-[4px] border border-[var(--border)] bg-[var(--canvas)] px-3 text-[11px] tracking-widest text-[var(--muted)] hover:bg-[var(--surface)] hover:text-[var(--text)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--selection)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--canvas)]"
             style={{ fontFamily: "var(--font-inter), Inter, sans-serif" }}
           >
-            ⚙ settings
+            <svg aria-hidden="true" className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="3" /><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1-2.8 2.8-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.6v.2h-4V21a1.7 1.7 0 0 0-1-1.6 1.7 1.7 0 0 0-1.9.3l-.1.1L4.2 17l.1-.1a1.7 1.7 0 0 0 .3-1.9A1.7 1.7 0 0 0 3 14H2.8v-4H3a1.7 1.7 0 0 0 1.6-1 1.7 1.7 0 0 0-.3-1.9L4.2 7 7 4.2l.1.1A1.7 1.7 0 0 0 9 4.6 1.7 1.7 0 0 0 10 3V2.8h4V3a1.7 1.7 0 0 0 1 1.6 1.7 1.7 0 0 0 1.9-.3l.1-.1L19.8 7l-.1.1a1.7 1.7 0 0 0-.3 1.9 1.7 1.7 0 0 0 1.6 1h.2v4H21a1.7 1.7 0 0 0-1.6 1Z" /></svg>
+            Settings
           </a>
         </footer>
 
         {devPanelOpen && (
           <motion.div
-            className="fixed bottom-4 right-4 z-50 max-h-[60vh] w-[calc(100vw-2rem)] max-w-[400px] overflow-auto rounded-[6px] border-2 bg-[#0F172A] p-3 shadow-xl"
-            style={{ borderColor: "#334155" }}
+            className="fixed bottom-4 right-4 z-50 max-h-[60vh] w-[calc(100vw-2rem)] max-w-[400px] overflow-auto rounded-[4px] border-2 border-[var(--strong-border)] bg-[var(--canvas)] p-3 shadow-[4px_4px_0_var(--surface)]"
             initial={{ opacity: 0, transform: "translateY(20px) scale(0.98)" }}
             animate={{ opacity: 1, transform: "translateY(0px) scale(1)" }}
             exit={{ opacity: 0, transform: "translateY(20px) scale(0.98)" }}
             transition={{ duration: 0.24, ease: [0.23, 1, 0.32, 1] }}
           >
             <div className="flex items-center justify-between mb-3">
-              <h3 className="text-[13px] font-bold text-[#F1F5F9]" style={{ fontFamily: "var(--font-vt), VT323, monospace" }}>
+              <h3 className="text-[13px] font-bold text-[var(--text)]" style={{ fontFamily: "var(--font-vt), VT323, monospace" }}>
                 DEV PANEL
               </h3>
-              <button onClick={() => setDevPanelOpen(false)} className="text-[#94A3B8] hover:text-[#F1F5F9]">
-                ✕
+              <button type="button" onClick={() => setDevPanelOpen(false)} className="flex h-11 w-11 cursor-pointer items-center justify-center text-[var(--muted)] hover:bg-[var(--raised)] hover:text-[var(--text)]" aria-label="Close developer panel">
+                <svg aria-hidden="true" className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M18 6 6 18M6 6l12 12" /></svg>
               </button>
             </div>
-            <div className="space-y-2 text-xs text-[#94A3B8]" style={{ fontFamily: "var(--font-inter), Inter, sans-serif" }}>
+            <div className="space-y-2 text-xs text-[var(--muted)]" style={{ fontFamily: "var(--font-inter), Inter, sans-serif" }}>
               <div><strong>SSE Connections:</strong> {healthMetrics?.activeSSEConnections ?? "—"}</div>
               <div><strong>Avg Latency:</strong> {healthMetrics?.sseMetrics?.avgLatencyMs ?? "—"}ms</div>
               <div><strong>P95 Latency:</strong> {healthMetrics?.sseMetrics?.p95LatencyMs ?? "—"}ms</div>
@@ -732,11 +734,12 @@ export default function Home() {
           <button
             type="button"
             onClick={() => setIsSidebarOpen(true)}
-            className="absolute left-2 top-16 z-30 hidden rounded-[4px] border-2 border-[#334155] bg-[#0F172A]/95 px-3 py-1.5 text-[10px] font-bold tracking-widest text-[#F1F5F9] hover:bg-[#1E293B] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#3B82F6] cursor-pointer lg:block"
+            className="absolute left-2 top-16 z-30 hidden min-h-11 cursor-pointer items-center gap-2 rounded-[4px] border-2 border-[var(--strong-border)] bg-[var(--canvas)] px-3 text-[10px] font-bold tracking-widest text-[var(--text)] hover:bg-[var(--surface)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--selection)] lg:flex"
             style={{ fontFamily: "var(--font-pixel), monospace" }}
             aria-label="Show floor panel"
           >
-            ☰ FLOORS
+            <svg aria-hidden="true" className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M4 6h16M4 12h16M4 18h16" /></svg>
+            FLOORS
           </button>
         )}
       </div>

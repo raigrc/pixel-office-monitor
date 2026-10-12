@@ -4,6 +4,7 @@ import { createNavGrid, isNavWalkable, rasterizeCircle, worldToGrid } from '../n
 import {
   AgentMotionController,
   DEPARTURE_STANDBY_SECONDS,
+  LEAVE_SPEED,
   MAX_ENTRANCES_PER_RECONCILE,
   workSiteForAgent,
   type MotionEnvironment,
@@ -43,6 +44,34 @@ function environment(count: number = 20): MotionEnvironment {
 }
 
 describe('AgentMotionController Phase 2 lifecycle', () => {
+  it('materializes the hydrated snapshot onsite without spawn events', () => {
+    const controller = new AgentMotionController();
+    const env = environment(2);
+
+    const delta = controller.reconcile([agent('agent-0')], env, { animateEntrances: false });
+
+    expect(delta.events).toEqual([]);
+    expect(controller.snapshot()[0].phase).toBe('onsite');
+    expect(controller.snapshot()[0].position).toEqual(env.sites.get('agent-0'));
+  });
+
+  it('animates one live arrival once after the baseline', () => {
+    const controller = new AgentMotionController();
+    const env = environment(2);
+    controller.reconcile([agent('agent-0')], env, { animateEntrances: false });
+
+    const arrival = controller.reconcile([agent('agent-0'), agent('agent-1')], env, {
+      animateEntrances: true,
+    });
+    const repeated = controller.reconcile([agent('agent-0'), agent('agent-1')], env, {
+      animateEntrances: true,
+    });
+
+    expect(arrival.events).toEqual([{ type: 'spawned', agentId: 'agent-1' }]);
+    expect(repeated.events).toEqual([]);
+    expect(controller.snapshot().find((entry) => entry.agent.id === 'agent-1')?.phase).toBe('entering');
+  });
+
   it('assigns 15 specialists plus orchestrator collision-free building-aware sites', () => {
     const home = new THREE.Vector3(0, 0.45, 0);
     const sites = Array.from({ length: 15 }, (_, seatIndex) =>
@@ -136,6 +165,20 @@ describe('AgentMotionController Phase 2 lifecycle', () => {
     expect(returned[0].position.distanceTo(leavingPosition)).toBeCloseTo(0, 5);
   });
 
+  it('materializes a returning actor onsite when hidden updates disable entrances', () => {
+    const controller = new AgentMotionController();
+    const env = environment(1);
+    controller.reconcile([agent('agent-0')], env, { animateEntrances: false });
+    controller.reconcile([], env);
+    controller.advance(DEPARTURE_STANDBY_SECONDS);
+
+    const returned = controller.reconcile([agent('agent-0')], env, { animateEntrances: false });
+
+    expect(returned.events).toEqual([]);
+    expect(controller.snapshot()[0].phase).toBe('onsite');
+    expect(controller.snapshot()[0].position).toEqual(env.sites.get('agent-0'));
+  });
+
   it('cancels standby without moving when work returns', () => {
     const controller = new AgentMotionController();
     const env = environment(1);
@@ -170,6 +213,32 @@ describe('AgentMotionController Phase 2 lifecycle', () => {
     controller.reconcile([], env, { activeWorldIds: new Set() });
 
     expect(controller.snapshot()[0].phase).toBe('leaving');
+  });
+
+  it('bypasses an existing standby when the floor closes', () => {
+    const controller = new AgentMotionController();
+    const env = environment(1);
+    controller.reconcile([agent('agent-0')], env, { animateEntrances: false });
+    controller.reconcile([], env, { activeWorldIds: new Set(['floor']) });
+    controller.advance(5);
+
+    controller.reconcile([], env, { activeWorldIds: new Set() });
+
+    expect(controller.snapshot()[0].phase).toBe('leaving');
+  });
+
+  it('expires hidden standby without unbounded movement catch-up', () => {
+    const controller = new AgentMotionController();
+    const env = environment(1);
+    controller.reconcile([agent('agent-0')], env, { animateEntrances: false });
+    controller.reconcile([], env);
+    const standbyPosition = controller.snapshot()[0].position.clone();
+
+    controller.advance(60 * 60);
+
+    const resumed = controller.snapshot()[0];
+    expect(resumed.phase).toBe('leaving');
+    expect(resumed.position.distanceTo(standbyPosition)).toBeLessThanOrEqual(LEAVE_SPEED * 0.1 + 0.001);
   });
 
   it('routes an arrival around blocked building cells', () => {

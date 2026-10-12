@@ -1,5 +1,7 @@
 import { describe, it, expect } from 'vitest';
-import { heightAt, createTerrainGeometry, TERRAIN_HALF_RANGE, type PlanetPreset } from '../terrain';
+import * as THREE from 'three';
+import { heightAt, createTerrainGeometry, createTerrainMaterial, TERRAIN_HALF_RANGE, type PlanetPreset } from '../terrain';
+import { COZY_THEME } from '../../cozy-theme';
 
 const PRESETS: PlanetPreset[] = ['luna', 'mars', 'terra'];
 
@@ -37,5 +39,20 @@ describe('createTerrainGeometry', () => {
       const expected = heightAt(pos.getX(i), pos.getZ(i), 'terra');
       expect(pos.getY(i)).toBeCloseTo(expected, 5);
     }
+  });
+
+  it('uses only canonical sage and moss bands for Terra', () => {
+    const geometry = createTerrainGeometry({ preset: 'terra', halfExtent: 8, resolution: 8 });
+    const colors = geometry.getAttribute('color');
+    const canonical = new Set(COZY_THEME.scene.terrainBands.map((color) => new THREE.Color(color).getHexString()));
+    for (let index = 0; index < colors.count; index++) {
+      const value = new THREE.Color(colors.getX(index), colors.getY(index), colors.getZ(index));
+      expect(canonical.has(value.getHexString())).toBe(true);
+    }
+    const material = createTerrainMaterial();
+    expect(material.vertexColors).toBe(true);
+    expect(material.roughness).toBe(COZY_THEME.materials.matte.roughness);
+    geometry.dispose();
+    material.dispose();
   });
 });

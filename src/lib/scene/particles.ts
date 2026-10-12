@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { COZY_THEME } from '../cozy-theme';
 
 export type ParticleType = 'spark' | 'confetti' | 'z' | 'dust' | 'ping';
 
@@ -88,7 +89,7 @@ export class ParticleSystem {
         p.life = 0.3 + Math.random() * 0.2;
         p.maxLife = p.life;
         p.size = 0.05 + Math.random() * 0.05;
-        p.color.setHSL(0.15, 1, 0.5 + Math.random() * 0.3);
+        p.color.set(COZY_THEME.semantic.working);
       } else if (type === 'confetti') {
         p.velocity.y += 3 + Math.random() * 2;
         p.velocity.x += (Math.random() - 0.5) * 3;
@@ -96,14 +97,13 @@ export class ParticleSystem {
         p.life = 1.5 + Math.random() * 1;
         p.maxLife = p.life;
         p.size = 0.15 + Math.random() * 0.1;
-        const hue = Math.random() * 0.15;
-        p.color.setHSL(hue, 0.8, 0.6);
+        p.color.set(COZY_THEME.semantic.success);
       } else if (type === 'z') {
         p.velocity.y = 0.5 + Math.random() * 0.5;
         p.life = 2 + Math.random() * 1;
         p.maxLife = p.life;
         p.size = 0.08 + Math.random() * 0.04;
-        p.color.setHSL(0.6, 0.5, 0.7);
+        p.color.set(COZY_THEME.semantic.idle);
       } else if (type === 'dust') {
         p.velocity.y = Math.random() * 0.5;
         p.velocity.x += (Math.random() - 0.5) * 1;
@@ -111,13 +111,13 @@ export class ParticleSystem {
         p.life = 0.5 + Math.random() * 0.5;
         p.maxLife = p.life;
         p.size = 0.05 + Math.random() * 0.05;
-        p.color.setHSL(0.1, 0.2, 0.4);
+        p.color.set(COZY_THEME.scene.scatter);
       } else if (type === 'ping') {
         p.velocity.set(0, 0, 0);
         p.life = 0.5;
         p.maxLife = 0.5;
         p.size = 0.5;
-        p.color.setHSL(0.55, 1, 0.6);
+        p.color.set(COZY_THEME.semantic.selection);
       }
 
       this.particles.push(p);

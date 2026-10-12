@@ -1,7 +1,8 @@
 import * as THREE from "three";
 import { describe, expect, it } from "vitest";
 import type { DirectDelegation } from "@/lib/activity/activity-model";
-import { Delegations3D } from "../delegations-3d";
+import { DELEGATION_SEMANTIC_COLORS, Delegations3D } from "../delegations-3d";
+import { COZY_THEME } from "../../cozy-theme";
 
 function relation(overrides: Partial<DirectDelegation> = {}): DirectDelegation {
   return {
@@ -17,6 +18,14 @@ function relation(overrides: Partial<DirectDelegation> = {}): DirectDelegation {
 }
 
 describe("Delegations3D", () => {
+  it("uses canonical purple delegation colors", () => {
+    expect(DELEGATION_SEMANTIC_COLORS).toEqual({
+      active: COZY_THEME.semantic.delegationActive,
+      pending: COZY_THEME.semantic.delegationPending,
+      token: COZY_THEME.semantic.delegationToken,
+    });
+  });
+
   it("creates one invocation-keyed arc and token, updates it, then removes it", () => {
     const scene = new THREE.Scene();
     const delegations = new Delegations3D(scene);
@@ -35,6 +44,12 @@ describe("Delegations3D", () => {
     const token = scene.children.find((child) => child instanceof THREE.Mesh);
     expect(path?.geometry.getAttribute('position').count).toBe(144);
     expect(token?.geometry).toBeInstanceOf(THREE.OctahedronGeometry);
+    expect((path?.material as THREE.LineBasicMaterial).color.getHex()).toBe(
+      new THREE.Color(COZY_THEME.semantic.delegationActive).getHex(),
+    );
+    expect((token?.material as THREE.MeshBasicMaterial).color.getHex()).toBe(
+      new THREE.Color(COZY_THEME.semantic.delegationToken).getHex(),
+    );
     delegations.reconcile([]);
     expect(scene.children).toHaveLength(0);
   });

@@ -1,7 +1,10 @@
 import * as THREE from 'three';
-import { CrewRig, Clip, createCrewRig, createBoneTexture, getClipFrame, getBoneMatrix } from './crew-rig';
-import { hexToWorld } from './hex-grid';
+import { type CrewRig, createBoneTexture, getClipFrame } from './crew-rig';
 import { AGENT_ACCESSORY_FAMILIES, type AgentAccessoryFamily } from '../agent-visual-identity';
+import { COZY_THEME } from '../cozy-theme';
+import { createCozyMaterial } from './cozy-materials';
+
+export const ASTRONAUT_INSTANCE_BOUNDS_PADDING = 2.5;
 
 export interface AstronautState {
   id: string;
@@ -24,14 +27,6 @@ export interface AstronautConfig {
 }
 
 const FACE_ATLAS_SIZE = 4;
-const FACE_COUNT = FACE_ATLAS_SIZE * FACE_ATLAS_SIZE;
-
-const FACE_EXPRESSIONS = [
-  'neutral', 'happy', 'focused', 'concerned',
-  'tired', 'sleepy', 'alert', 'excited',
-  'confused', 'determined', 'bored', 'stressed',
-  'proud', 'worried', 'curious', 'calm',
-];
 
 function createFaceAtlas(): THREE.CanvasTexture {
   const size = 128;
@@ -122,6 +117,7 @@ export const ASTRONAUT_VERTEX_SHADER = `
   varying vec3 vWorldPosition;
 
   uniform float uTime;
+  uniform float uIdleMotion;
   uniform vec3 uSunDirection;
   uniform vec3 uSunColor;
   uniform float uSunIntensity;
@@ -139,7 +135,7 @@ export const ASTRONAUT_VERTEX_SHADER = `
     );
 
     vec3 pos = position;
-    float anim = sin(uTime * 2.0 + instanceFrame) * 0.05;
+    float anim = sin(uTime * 2.0 + instanceFrame) * 0.05 * uIdleMotion;
     pos.y += anim;
 
     // InstancedMesh path: every instance shares this shader, so the
@@ -260,39 +256,39 @@ export class Astronauts {
     bodyGeo.setAttribute('instanceFace', instanceFace);
     bodyGeo.setAttribute('aSuit', suitColor);
 
-    this.helmetMesh = new THREE.InstancedMesh(helmetGeo, new THREE.MeshStandardMaterial({
-      color: 0xffffff,
-      roughness: 0.3,
-      metalness: 0.7,
-    }), this.maxAgents);
+    this.helmetMesh = new THREE.InstancedMesh(
+      helmetGeo,
+      createCozyMaterial({ recipe: 'paintedMetal', color: COZY_THEME.environment.floor }),
+      this.maxAgents,
+    );
 
-    this.visorMesh = new THREE.InstancedMesh(visorGeo, new THREE.MeshStandardMaterial({
-      color: 0x001133,
-      roughness: 0.05,
-      metalness: 0.9,
-      transparent: true,
-      opacity: 0.6,
-    }), this.maxAgents);
+    this.visorMesh = new THREE.InstancedMesh(
+      visorGeo,
+      createCozyMaterial({ recipe: 'brushedMetal', color: COZY_THEME.ui.canvas }),
+      this.maxAgents,
+    );
 
-    this.backpackMesh = new THREE.InstancedMesh(backpackGeo, new THREE.MeshStandardMaterial({
-      color: 0xffffff,
-      roughness: 0.8,
-      metalness: 0.2,
-    }), this.maxAgents);
+    this.backpackMesh = new THREE.InstancedMesh(
+      backpackGeo,
+      createCozyMaterial({ recipe: 'matte', color: COZY_THEME.environment.floor }),
+      this.maxAgents,
+    );
 
-    this.antennaMesh = new THREE.InstancedMesh(antennaGeo, new THREE.MeshStandardMaterial({
-      color: 0x444444,
-      roughness: 0.5,
-      metalness: 0.5,
-    }), this.maxAgents);
+    this.antennaMesh = new THREE.InstancedMesh(
+      antennaGeo,
+      createCozyMaterial({ recipe: 'brushedMetal', color: COZY_THEME.environment.metal }),
+      this.maxAgents,
+    );
 
-    this.lampMesh = new THREE.InstancedMesh(lampGeo, new THREE.MeshStandardMaterial({
-      color: 0xffffaa,
-      emissive: 0xffffaa,
-      emissiveIntensity: 0.5,
-      transparent: true,
-      opacity: 0.8,
-    }), this.maxAgents);
+    this.lampMesh = new THREE.InstancedMesh(
+      lampGeo,
+      createCozyMaterial({
+        recipe: 'softGlow',
+        color: COZY_THEME.environment.lamp,
+        emissive: COZY_THEME.environment.lamp,
+      }),
+      this.maxAgents,
+    );
 
     this.accessoryMeshes = {
       sensor: this.createAccessoryMesh('sensor', this.createAccessoryGeometry('sensor')),
@@ -302,6 +298,8 @@ export class Astronauts {
       shield: this.createAccessoryMesh('shield', this.createAccessoryGeometry('shield')),
       device: this.createAccessoryMesh('device', this.createAccessoryGeometry('device')),
     };
+
+    this.refreshBounds();
   }
 
   private createAccessoryGeometry(family: AgentAccessoryFamily): THREE.BufferGeometry {
@@ -346,11 +344,9 @@ export class Astronauts {
   }
 
   private createAccessoryMesh(family: AgentAccessoryFamily, geometry: THREE.BufferGeometry): THREE.InstancedMesh {
-    const mesh = new THREE.InstancedMesh(geometry, new THREE.MeshBasicMaterial({
-      color: 0xffffff,
-      side: THREE.DoubleSide,
-      toneMapped: false,
-    }), this.maxAgents);
+    const material = createCozyMaterial({ recipe: 'paintedMetal', color: COZY_THEME.ui.text });
+    material.side = THREE.DoubleSide;
+    const mesh = new THREE.InstancedMesh(geometry, material, this.maxAgents);
     mesh.name = `role-accessory-${family}`;
     mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
     return mesh;
@@ -362,13 +358,14 @@ export class Astronauts {
       fragmentShader: ASTRONAUT_FRAGMENT_SHADER,
       uniforms: {
         uTime: { value: 0 },
+        uIdleMotion: { value: 1 },
         uSunDirection: { value: new THREE.Vector3(0, 1, 0) },
-        uSunColor: { value: new THREE.Color(0xffffee) },
+        uSunColor: { value: new THREE.Color(COZY_THEME.ui.text) },
         uSunIntensity: { value: 1 },
-        uAmbientColor: { value: new THREE.Color(0x333344) },
+        uAmbientColor: { value: new THREE.Color(COZY_THEME.scene.terraSky.nightAmbient) },
         uAmbientIntensity: { value: 0.5 },
         uFillDirection: { value: new THREE.Vector3(-0.5, 0.75, -0.25).normalize() },
-        uFillColor: { value: new THREE.Color(0x9db8e8) },
+        uFillColor: { value: new THREE.Color(COZY_THEME.scene.terraSky.nightFill) },
         uFillIntensity: { value: 0 },
       },
     });
@@ -529,6 +526,10 @@ export class Astronauts {
     if (uniforms.uFillIntensity !== undefined) this.material.uniforms.uFillIntensity.value = uniforms.uFillIntensity;
   }
 
+  setReducedMotion(enabled: boolean): void {
+    this.material.uniforms.uIdleMotion.value = enabled ? 0 : 1;
+  }
+
   getMeshes(): THREE.InstancedMesh[] {
     return [
       this.bodyMesh,
@@ -551,6 +552,20 @@ export class Astronauts {
 
   getAgentCount(): number {
     return this.agentCount;
+  }
+
+  refreshBounds(): void {
+    const bounds = new THREE.Box3();
+    for (const agent of this.agents.values()) bounds.expandByPoint(agent.position);
+    const sphere = new THREE.Sphere();
+    if (bounds.isEmpty()) {
+      sphere.center.set(0, 1.2, 0);
+      sphere.radius = 0;
+    } else {
+      bounds.getBoundingSphere(sphere);
+      sphere.radius += ASTRONAUT_INSTANCE_BOUNDS_PADDING;
+    }
+    for (const mesh of this.getMeshes()) mesh.boundingSphere = sphere;
   }
 
   getAgent(id: string): AstronautState | undefined {

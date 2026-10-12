@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import * as THREE from 'three';
-import { ThreeCamera } from '../three-camera';
+import { MIN_CAMERA_DISTANCE, THREE_CAMERA_NEAR, ThreeCamera } from '../three-camera';
 import { framingDistance } from '../three-engine';
 
 class CameraElement extends EventTarget {
@@ -119,10 +119,73 @@ describe('ThreeCamera Phase 2 interactions', () => {
     controller.dispose();
   });
 
+  it('ignores controls while paused and resumes without resetting camera state', () => {
+    const camera = new THREE.PerspectiveCamera(50, 4 / 3, 0.1, 200);
+    const element = new CameraElement();
+    const controller = new ThreeCamera(camera, element as HTMLElement);
+    const initial = controller.getState();
+
+    controller.setPaused(true);
+    element.dispatchEvent(pointer('pointerdown', { pointerId: 1, button: 2, clientX: 0, clientY: 0 }));
+    element.dispatchEvent(pointer('pointermove', { pointerId: 1, clientX: 40, clientY: 0 }));
+    element.dispatchEvent(pointer('wheel', { deltaY: -1, clientX: 400, clientY: 300 }));
+    controller.update(1);
+    expect(controller.getState()).toEqual(initial);
+
+    controller.setPaused(false);
+    element.dispatchEvent(pointer('pointerdown', { pointerId: 2, button: 2, clientX: 0, clientY: 0 }));
+    element.dispatchEvent(pointer('pointermove', { pointerId: 2, clientX: 20, clientY: 0 }));
+    controller.update(1);
+    expect(controller.getState().azimuth).toBeCloseTo(initial.azimuth - 0.1, 3);
+    controller.dispose();
+  });
+
   it('backs up farther for a narrow portrait viewport', () => {
     const landscape = new THREE.PerspectiveCamera(50, 16 / 9, 0.1, 200);
     const portrait = new THREE.PerspectiveCamera(50, 390 / 844, 0.1, 200);
 
     expect(framingDistance(3.6, portrait)).toBeGreaterThan(framingDistance(3.6, landscape));
+  });
+
+  it('uses the same safe minimum distance for wheel and pinch zoom', () => {
+    expect(THREE_CAMERA_NEAR).toBe(0.1);
+    const wheelElement = new CameraElement();
+    const wheelController = new ThreeCamera(
+      new THREE.PerspectiveCamera(50, 4 / 3, THREE_CAMERA_NEAR, 200),
+      wheelElement as HTMLElement,
+    );
+    wheelController.setReducedMotion(true);
+    for (let index = 0; index < 30; index++) {
+      wheelElement.dispatchEvent(pointer('wheel', { deltaY: -1, clientX: 400, clientY: 300 }));
+    }
+    wheelController.update(0);
+
+    const pinchElement = new CameraElement();
+    const pinchController = new ThreeCamera(
+      new THREE.PerspectiveCamera(50, 4 / 3, THREE_CAMERA_NEAR, 200),
+      pinchElement as HTMLElement,
+    );
+    pinchController.setReducedMotion(true);
+    pinchElement.dispatchEvent(pointer('pointerdown', { pointerId: 1, button: 0, clientX: 300, clientY: 300 }));
+    pinchElement.dispatchEvent(pointer('pointerdown', { pointerId: 2, button: 0, clientX: 500, clientY: 300 }));
+    pinchElement.dispatchEvent(pointer('pointermove', { pointerId: 2, clientX: 5000, clientY: 300 }));
+    pinchController.update(0);
+
+    expect(wheelController.getState().distance).toBe(MIN_CAMERA_DISTANCE);
+    expect(pinchController.getState().distance).toBe(MIN_CAMERA_DISTANCE);
+    wheelController.dispose();
+    pinchController.dispose();
+  });
+
+  it('keeps camera outside the inspected target at minimum zoom', () => {
+    const camera = new THREE.PerspectiveCamera(50, 4 / 3, THREE_CAMERA_NEAR, 200);
+    const controller = new ThreeCamera(camera, new CameraElement() as HTMLElement);
+    controller.setReducedMotion(true);
+    controller.focus(new THREE.Vector3(3, 0.45, -2), 0);
+
+    const state = controller.getState();
+    expect(state.distance).toBe(MIN_CAMERA_DISTANCE);
+    expect(camera.position.distanceTo(state.target)).toBeCloseTo(MIN_CAMERA_DISTANCE, 5);
+    controller.dispose();
   });
 });

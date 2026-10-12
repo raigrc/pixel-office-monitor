@@ -1,0 +1,39 @@
+{
+  "version": 1,
+  "origin": "project-original",
+  "externalSources": [],
+  "licenses": [],
+  "authoringMethod": "AI-authored deterministic pixel maps rasterized once by a temporary local Pillow bootstrap script; no external image-generation tool was used.",
+  "author": "Pixel Office Monitor project",
+  "reviewed": true,
+  "reviewedBy": "OpenCode implementation visual review",
+  "reviewedAt": "2026-09-12",
+  "authoritativeRegistries": [
+    "src/lib/agents.ts",
+    "src/lib/agent-visual-identity.ts"
+  ],
+  "requiredAppearances": [
+    "ai-systems",
+    "architect",
+    "automation-engineer",
+    "devops",
+    "documentation",
+    "project-manager",
+    "qa-engineer",
+    "researcher",
+    "security-reviewer",
+    "senior-engineer",
+    "build",
+    "plan",
+    "general",
+    "explore",
+    "scout",
+    "title",
+    "summary",
+    "compaction",
+    "orchestrator",
+    "intern",
+    "unknown",
+    "fallback"
+  ]
+}

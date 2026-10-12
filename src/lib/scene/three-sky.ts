@@ -1,5 +1,20 @@
 import * as THREE from 'three';
-import { deriveTimeOfDayFromDate, normalizeTimeOfDay } from './lighting-time';
+import { COZY_THEME } from '../cozy-theme';
+import {
+  DAY_END,
+  deriveTimeOfDayFromDate,
+  normalizeTimeOfDay,
+  stageForTimeOfDay,
+  type TimeStage,
+} from './lighting-time';
+
+export {
+  DAY_END,
+  DAY_START,
+  DUSK_EVENING_END,
+  DUSK_MORNING_START,
+  stageForTimeOfDay,
+} from './lighting-time';
 
 export type SkyPreset = 'luna' | 'mars' | 'terra';
 
@@ -10,13 +25,7 @@ export interface SkyConfig {
 }
 
 /** Readable lighting stages. Dusk covers both dawn and dusk transitions. */
-export type LightingStage = 'day' | 'dusk' | 'night';
-
-/** Stage windows in local hours. */
-export const DAY_START = 7;
-export const DAY_END = 17;
-export const DUSK_MORNING_START = 5;
-export const DUSK_EVENING_END = 20;
+export type LightingStage = TimeStage;
 /**
  * Minimum effective ambient intensity at night, every preset. Flat ambient
  * alone leaves dark-albedo terrain near-black through ACES, so night also
@@ -26,14 +35,14 @@ export const DUSK_EVENING_END = 20;
 export const NIGHT_AMBIENT_FLOOR = 0.48;
 /** Cool directional fill at full night. Zero at full day. */
 export const NIGHT_FILL_INTENSITY = 0.65;
-export const NIGHT_FILL_HEX = 0x9db8e8;
+export const NIGHT_FILL_HEX = new THREE.Color(COZY_THEME.scene.terraSky.nightFill).getHex();
 /** Cool neutral fill used as the night ambient color. */
-export const NIGHT_AMBIENT_HEX = 0x8fa3c7;
-const NIGHT_ZENITH_HEX = 0x0b1326;
-const NIGHT_HORIZON_HEX = 0x182b4a;
-const NIGHT_GROUND_HEX = 0x08101c;
+export const NIGHT_AMBIENT_HEX = new THREE.Color(COZY_THEME.scene.terraSky.nightAmbient).getHex();
+const NIGHT_ZENITH_HEX = new THREE.Color(COZY_THEME.scene.terraSky.nightZenith).getHex();
+const NIGHT_HORIZON_HEX = new THREE.Color(COZY_THEME.scene.terraSky.nightHorizon).getHex();
+const NIGHT_GROUND_HEX = new THREE.Color(COZY_THEME.scene.terraSky.nightGround).getHex();
 /** Warm horizon glow blended in during dawn/dusk transitions. */
-const DUSK_WARM_HEX = 0xb45a2a;
+const DUSK_WARM_HEX = new THREE.Color(COZY_THEME.scene.terraSky.dusk).getHex();
 
 /**
  * Converts epoch millis to fractional hours of day.
@@ -55,14 +64,6 @@ export function resolveTimeOfDay(config: Pick<SkyConfig, 'timeOfDay' | 'liveMode
     return deriveTimeOfDayFromEpoch(timeMs);
   }
   return config.timeOfDay;
-}
-
-export function stageForTimeOfDay(timeOfDay: number): LightingStage {
-  const t = normalizeTimeOfDay(timeOfDay);
-  if (t >= DUSK_MORNING_START && t < DAY_START) return 'dusk';
-  if (t >= DAY_START && t < DAY_END) return 'day';
-  if (t >= DAY_END && t < DUSK_EVENING_END) return 'dusk';
-  return 'night';
 }
 
 function smoothstep(edge0: number, edge1: number, x: number): number {
@@ -89,7 +90,7 @@ export interface LightingProfile {
   duskWeight: number;
   /** Directional sun multiplier. Exactly 0 through full night. */
   sunIntensity: number;
-  /** Cool directional fill. 0 at full day, NIGHT_FILL_INTENSITY at night. */
+  /** Cool directional fill. 0 at full day, with profile-tuned dusk relief. */
   fillIntensity: number;
   /** Continuous solar vector. Unbroken across day/dusk/night. */
   sunDirection: { x: number; y: number; z: number };
@@ -114,6 +115,7 @@ export function computeLightingProfile(timeOfDay: number, preset: SkyPreset): Li
   const dawn = smoothstep(5, 6, t) * (1 - smoothstep(6, 7, t));
   const dusk = smoothstep(17, 18, t) * (1 - smoothstep(18, 20, t));
   const duskWeight = Math.max(dawn, dusk);
+  const duskLightWeight = t >= DAY_END ? 4 * daylight * (1 - daylight) : 0;
 
   const solarAngle = ((t - 6) / 24) * Math.PI * 2;
   const sunElevation = Math.sin(solarAngle) * (Math.PI / 2 - base.tilt);
@@ -130,13 +132,16 @@ export function computeLightingProfile(timeOfDay: number, preset: SkyPreset): Li
   const sunIntensity = Math.max(0, elevationSin) * base.sunIntensity * daylight;
   // Moonlight-style relief shading. Flat ambient alone cannot model
   // terrain relief, so night keeps a cool directional component.
-  const fillIntensity = (1 - daylight) * NIGHT_FILL_INTENSITY;
+  const fillIntensity =
+    (1 - daylight) * NIGHT_FILL_INTENSITY + duskLightWeight * base.duskFillBoost;
 
   // Keep ambient above the UI readability floor at every hour. Directional
   // sun still provides clear day/night contrast.
   const dayAmbient = (0.2 + 0.5 * Math.max(0, elevationSin)) * base.ambientIntensity;
   const ambientIntensity =
-    NIGHT_AMBIENT_FLOOR + Math.max(0, dayAmbient - NIGHT_AMBIENT_FLOOR) * daylight;
+    NIGHT_AMBIENT_FLOOR +
+    Math.max(0, dayAmbient - NIGHT_AMBIENT_FLOOR) * daylight +
+    duskLightWeight * base.duskAmbientBoost;
 
   const zenithHex = lerpHex(NIGHT_ZENITH_HEX, base.zenith.getHex(), daylight);
   const groundHex = lerpHex(NIGHT_GROUND_HEX, base.ground.getHex(), daylight);
@@ -167,6 +172,8 @@ const SKY_PRESETS: Record<SkyPreset, {
   sunColor: THREE.Color;
   sunIntensity: number;
   ambientIntensity: number;
+  duskAmbientBoost: number;
+  duskFillBoost: number;
   tilt: number;
 }> = {
   luna: {
@@ -176,6 +183,8 @@ const SKY_PRESETS: Record<SkyPreset, {
     sunColor: new THREE.Color(0xffffff),
     sunIntensity: 1.5,
     ambientIntensity: 0.3,
+    duskAmbientBoost: 0,
+    duskFillBoost: 0,
     tilt: 0.4,
   },
   mars: {
@@ -185,15 +194,19 @@ const SKY_PRESETS: Record<SkyPreset, {
     sunColor: new THREE.Color(0xffcc88),
     sunIntensity: 1.2,
     ambientIntensity: 0.4,
+    duskAmbientBoost: 0,
+    duskFillBoost: 0,
     tilt: 0.35,
   },
   terra: {
-    zenith: new THREE.Color(0x004488),
-    horizon: new THREE.Color(0x88ccee),
-    ground: new THREE.Color(0x2d5a27),
-    sunColor: new THREE.Color(0xffffee),
-    sunIntensity: 1.8,
-    ambientIntensity: 0.5,
+    zenith: new THREE.Color(COZY_THEME.scene.terraSky.dayZenith),
+    horizon: new THREE.Color(COZY_THEME.scene.terraSky.dayHorizon),
+    ground: new THREE.Color(COZY_THEME.scene.terraSky.dayGround),
+    sunColor: new THREE.Color(COZY_THEME.ui.text),
+    sunIntensity: 1.65,
+    ambientIntensity: 0.62,
+    duskAmbientBoost: 0.44,
+    duskFillBoost: 0.32,
     tilt: 0.4,
   },
 };

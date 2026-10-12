@@ -5,8 +5,11 @@ import type { FloorDTO } from "@/lib/monitor-store";
 import type {
   MultiSessionFloor,
   MultiSessionModel,
-  SessionLifecycle,
 } from "@/lib/multi-session/multi-session-model";
+import {
+  getSessionAccentProperties,
+  resolveSessionLifecycleMarkerColor,
+} from "@/lib/session-visual-identity";
 
 type SseStatus = "connecting" | "live" | "reconnecting" | "offline";
 
@@ -42,12 +45,6 @@ const GROUPS: ReadonlyArray<{ key: keyof MultiSessionModel; label: string }> = [
   { key: "quiet", label: "Quiet" },
   { key: "completed", label: "Recently completed" },
 ];
-
-const LIFECYCLE_COLORS: Record<SessionLifecycle, string> = {
-  working: "bg-[#22C55E] shadow-[0_0_6px_rgba(34,197,94,0.55)]",
-  quiet: "bg-[#64748B]",
-  completed: "bg-[#3B82F6]",
-};
 
 function SearchIcon() {
   return (
@@ -213,10 +210,10 @@ function NavigatorContent({
 
   return (
     <div className="flex min-h-0 flex-1 flex-col" onKeyDown={handleListKeyDown}>
-      <div className="border-b border-[#334155] p-3">
+      <div className="border-b border-[var(--border)] p-3">
         <div className="relative">
           <label className="sr-only" htmlFor={`${idPrefix}-search`}>Search sessions</label>
-          <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[#64748B]"><SearchIcon /></span>
+          <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[var(--dim)]"><SearchIcon /></span>
           <input
             ref={searchRef}
             id={`${idPrefix}-search`}
@@ -225,14 +222,14 @@ function NavigatorContent({
             onChange={(event) => setQuery(event.target.value)}
             placeholder="Search title, project, or ID"
             aria-controls={listId}
-            className="h-11 w-full rounded-[4px] border border-[#334155] bg-[#0B1220] pl-9 pr-3 text-sm text-[#F1F5F9] outline-none placeholder:text-[#64748B] focus:border-[#3B82F6] focus:ring-2 focus:ring-[#3B82F6]/40"
+            className="h-11 w-full rounded-[4px] border border-[var(--border)] bg-[var(--canvas)] pl-9 pr-3 text-sm text-[var(--text)] outline-none placeholder:text-[var(--dim)] focus:border-[var(--selection)] focus:ring-2 focus:ring-[var(--selection)]"
           />
         </div>
       </div>
 
       <div id={listId} className="min-h-0 flex-1 overflow-y-auto p-2" aria-label="Grouped sessions">
         {!hasResults && (
-          <p className="px-3 py-10 text-center text-sm text-[#94A3B8]">No sessions match search.</p>
+          <p className="px-3 py-10 text-center text-sm text-[var(--muted)]">No sessions match search.</p>
         )}
         {GROUPS.map(({ key, label }) => {
           const floors = filtered[key];
@@ -245,18 +242,18 @@ function NavigatorContent({
                 <button
                   type="button"
                   onClick={() => setCompletedOpen((open) => !open)}
-                  className="flex min-h-11 w-full cursor-pointer items-center gap-2 rounded-[4px] px-2 text-left text-[10px] font-bold uppercase tracking-[0.16em] text-[#94A3B8] hover:bg-[#1E293B] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#3B82F6]"
+                  className="flex min-h-11 w-full cursor-pointer items-center gap-2 rounded-[4px] px-2 text-left text-[10px] font-bold uppercase tracking-[0.16em] text-[var(--muted)] hover:bg-[var(--raised)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--selection)]"
                   aria-expanded={expanded}
                   aria-controls={groupId}
                 >
-                  <span aria-hidden="true" className={`transition-transform ${expanded ? "rotate-90" : ""}`}>›</span>
+                  <svg aria-hidden="true" className={`h-3 w-3 transition-transform ${expanded ? "rotate-90" : ""}`} viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="2"><path d="m4 2 4 4-4 4" /></svg>
                   <span id={`${groupId}-label`}>{label}</span>
-                  <span className="ml-auto rounded-full bg-[#1E293B] px-2 py-0.5 text-[#CBD5E1]">{model[key].length}</span>
+                  <span className="ml-auto rounded-[3px] bg-[var(--raised)] px-2 py-0.5 text-[var(--text)]">{model[key].length}</span>
                 </button>
               ) : (
-                <h2 id={`${groupId}-label`} className="flex min-h-11 items-center px-2 text-[10px] font-bold uppercase tracking-[0.16em] text-[#94A3B8]">
+                <h2 id={`${groupId}-label`} className="flex min-h-11 items-center px-2 text-[10px] font-bold uppercase tracking-[0.16em] text-[var(--muted)]">
                   {label}
-                  <span className="ml-auto rounded-full bg-[#1E293B] px-2 py-0.5 text-[#CBD5E1]">{model[key].length}</span>
+                  <span className="ml-auto rounded-[3px] bg-[var(--raised)] px-2 py-0.5 text-[var(--text)]">{model[key].length}</span>
                 </h2>
               )}
 
@@ -273,8 +270,10 @@ function NavigatorContent({
                       <div
                         key={floor.floorId}
                         role="listitem"
-                        className={`group grid grid-cols-[minmax(0,1fr)_auto] rounded-[5px] border ${active ? "border-[#3B82F6] bg-[#172440]" : "border-[#334155] bg-[#111C30]"}`}
+                        className={`group relative grid grid-cols-[minmax(0,1fr)_auto] rounded-[5px] border ${active ? "border-[var(--selection)] bg-[var(--raised)]" : "border-[var(--border)] bg-[var(--surface)]"}`}
+                        style={getSessionAccentProperties(floor.floorId)}
                       >
+                        <span aria-hidden="true" className="absolute inset-y-2 left-0 w-[3px] bg-[var(--session-accent)]" />
                         <button
                           ref={(element) => {
                             if (element) rowRefs.current.set(floor.floorId, element);
@@ -284,31 +283,35 @@ function NavigatorContent({
                           onClick={() => handleMainAction(floor)}
                           aria-current={active ? "page" : undefined}
                           aria-label={floorAccessibleName(floor, active, compared, unread)}
-                          className="flex min-h-14 min-w-0 cursor-pointer items-center gap-2 rounded-l-[4px] px-3 text-left hover:bg-[#24324D] focus-visible:z-10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[#3B82F6]"
+                          className="flex min-h-14 min-w-0 cursor-pointer items-center gap-2 rounded-l-[4px] px-3 pl-4 text-left hover:bg-[var(--raised)] focus-visible:z-10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--selection)]"
                         >
-                          <span aria-hidden="true" className={`h-2.5 w-2.5 shrink-0 rounded-full ${LIFECYCLE_COLORS[floor.lifecycle]}`} />
+                          <span
+                            aria-hidden="true"
+                            className="h-2.5 w-2.5 shrink-0 rounded-full"
+                            style={{ backgroundColor: resolveSessionLifecycleMarkerColor(floor.lifecycle) }}
+                          />
                           <span className="min-w-0 flex-1">
-                            <span className="block truncate text-[15px] leading-5 text-[#F1F5F9]" style={{ fontFamily: "var(--font-vt), VT323, monospace" }}>{floor.title}</span>
-                            <span className="flex min-w-0 items-center gap-2 text-[10px] text-[#94A3B8]">
+                            <span className="block truncate text-[15px] leading-5 text-[var(--text)]" style={{ fontFamily: "var(--font-vt), VT323, monospace" }}>{floor.title}</span>
+                            <span className="flex min-w-0 items-center gap-2 text-[10px] text-[var(--muted)]">
                               <span className="truncate">{floor.projectId}</span>
                               <span className="shrink-0">{floor.activeInvocationCount} task{floor.activeInvocationCount === 1 ? "" : "s"}</span>
                               <span className="shrink-0">{actorCount} actor{actorCount === 1 ? "" : "s"}</span>
                               {cubicleCount !== undefined && <span className="sr-only">{cubicleCount} cubicles</span>}
                             </span>
                           </span>
-                          {unread > 0 && <span className="min-w-5 rounded-full bg-[#3B82F6] px-1.5 py-0.5 text-center text-[10px] font-bold text-white" aria-hidden="true">{unread > 99 ? "99+" : unread}</span>}
+                          {unread > 0 && <span className="min-w-5 rounded-[3px] bg-[var(--selection)] px-1.5 py-0.5 text-center text-[10px] font-bold text-[var(--canvas)]" aria-hidden="true">{unread > 99 ? "99+" : unread}</span>}
                         </button>
 
-                        <div className="flex items-center border-l border-[#334155]">
-                          {floor.lifecycle !== "completed" && <button type="button" onClick={() => onPin(floor.floorId)} aria-pressed={pinned} aria-label={`${pinned ? "Unpin" : "Pin"} ${floor.title}`} className={`flex h-11 w-11 cursor-pointer items-center justify-center hover:bg-[#24324D] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[#3B82F6] ${pinned ? "text-[#FBBF24]" : "text-[#64748B]"}`}><PinIcon filled={pinned} /></button>}
-                          <button type="button" onClick={() => onCompare(floor.floorId)} aria-pressed={compared} aria-label={`${compared ? "Remove" : "Add"} ${floor.title} ${compared ? "from" : "to"} comparison`} className={`flex h-11 w-11 cursor-pointer items-center justify-center hover:bg-[#24324D] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[#3B82F6] ${compared ? "bg-[#3B82F6]/15 text-[#60A5FA]" : "text-[#64748B]"}`}><CompareIcon /></button>
-                          {onRename && floor.lifecycle !== "completed" && <button type="button" onClick={() => void renameFloor(floor)} aria-label={`Rename ${floor.title}`} className="flex h-11 w-11 cursor-pointer items-center justify-center text-[#64748B] hover:bg-[#24324D] hover:text-[#F1F5F9] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[#3B82F6]"><PencilIcon /></button>}
-                          {floor.lifecycle !== "completed" && <button type="button" onClick={() => onClose(floor.floorId)} aria-label={`Complete ${floor.title}`} className="flex h-11 w-11 cursor-pointer items-center justify-center rounded-r-[4px] text-[#64748B] hover:bg-[#22C55E]/10 hover:text-[#22C55E] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[#22C55E]"><CheckIcon /></button>}
+                        <div className="flex items-center border-l border-[var(--border)] lg:grid lg:grid-cols-2">
+                          {floor.lifecycle !== "completed" && <button type="button" onClick={() => onPin(floor.floorId)} aria-pressed={pinned} aria-label={`${pinned ? "Unpin" : "Pin"} ${floor.title}`} className={`flex h-11 w-11 cursor-pointer items-center justify-center hover:bg-[var(--raised)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--selection)] ${pinned ? "text-[var(--waiting)]" : "text-[var(--dim)]"}`}><PinIcon filled={pinned} /></button>}
+                          <button type="button" onClick={() => onCompare(floor.floorId)} aria-pressed={compared} aria-label={`${compared ? "Remove" : "Add"} ${floor.title} ${compared ? "from" : "to"} comparison`} className={`flex h-11 w-11 cursor-pointer items-center justify-center hover:bg-[var(--raised)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--selection)] ${compared ? "bg-[var(--raised)] text-[var(--selection)]" : "text-[var(--dim)]"}`}><CompareIcon /></button>
+                          {onRename && floor.lifecycle !== "completed" && <button type="button" onClick={() => void renameFloor(floor)} aria-label={`Rename ${floor.title}`} className="flex h-11 w-11 cursor-pointer items-center justify-center text-[var(--dim)] hover:bg-[var(--raised)] hover:text-[var(--text)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--selection)]"><PencilIcon /></button>}
+                          {floor.lifecycle !== "completed" && <button type="button" onClick={() => onClose(floor.floorId)} aria-label={`Complete ${floor.title}`} className="flex h-11 w-11 cursor-pointer items-center justify-center rounded-r-[4px] text-[var(--dim)] hover:bg-[var(--raised)] hover:text-[var(--success)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--success)]"><CheckIcon /></button>}
                         </div>
                       </div>
                     );
                   })}
-                  {floors.length === 0 && hasResults && <p className="px-3 py-2 text-xs text-[#64748B]">No matching sessions</p>}
+                  {floors.length === 0 && hasResults && <p className="px-3 py-2 text-xs text-[var(--dim)]">No matching sessions</p>}
                 </div>
               )}
             </section>
@@ -316,11 +319,11 @@ function NavigatorContent({
         })}
       </div>
 
-      <footer className="flex min-h-12 items-center gap-2 border-t border-[#334155] px-3 text-[10px] uppercase tracking-wider text-[#94A3B8]">
-        <span aria-hidden="true" className={`h-2 w-2 rounded-full ${sseStatus === "live" ? "bg-[#22C55E]" : sseStatus === "offline" ? "bg-[#EF4444]" : sseStatus === "reconnecting" ? "bg-[#F59E0B]" : "bg-[#64748B]"}`} />
+      <footer className="flex min-h-12 items-center gap-2 border-t border-[var(--border)] px-3 text-[10px] uppercase tracking-wider text-[var(--muted)]">
+        <span aria-hidden="true" className={`h-2 w-2 rounded-full ${sseStatus === "live" ? "bg-[var(--working)]" : sseStatus === "offline" ? "bg-[var(--error)]" : sseStatus === "reconnecting" ? "bg-[var(--waiting)]" : "bg-[var(--idle)]"}`} />
         <span>{sseStatus}</span>
         {onFollowActivityChange && (
-          <button type="button" onClick={() => onFollowActivityChange(!followActivity)} aria-pressed={followActivity} className={`ml-auto min-h-11 cursor-pointer rounded-[4px] border px-3 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#3B82F6] ${followActivity ? "border-[#3B82F6] bg-[#3B82F6]/10 text-[#60A5FA]" : "border-[#334155] text-[#94A3B8] hover:bg-[#1E293B]"}`}>Follow activity</button>
+          <button type="button" onClick={() => onFollowActivityChange(!followActivity)} aria-pressed={followActivity} className={`ml-auto min-h-11 cursor-pointer rounded-[4px] border px-3 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--selection)] ${followActivity ? "border-[var(--selection)] bg-[var(--raised)] text-[var(--selection)]" : "border-[var(--border)] text-[var(--muted)] hover:bg-[var(--raised)]"}`}>Follow activity</button>
         )}
       </footer>
     </div>
@@ -372,21 +375,21 @@ export default function FloorSwitcher(props: FloorSwitcherProps) {
   return (
     <>
       {props.desktopOpen !== false && (
-        <aside className="fixed left-0 top-14 z-30 hidden h-[calc(100dvh-3.5rem)] w-[22rem] flex-col border-r-2 border-[#334155] bg-[#0F172A]/[0.98] shadow-[2px_0_0_#0B1220] lg:flex" aria-label="Session navigator">
-          <header className="flex min-h-12 items-center border-b border-[#334155] px-3">
-            <h1 className="text-[11px] font-bold uppercase tracking-[0.18em] text-[#F1F5F9]">Sessions</h1>
-            {props.onDesktopClose && <button type="button" onClick={props.onDesktopClose} className="ml-auto flex h-11 w-11 cursor-pointer items-center justify-center rounded-[4px] text-[#94A3B8] hover:bg-[#1E293B] hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#3B82F6]" aria-label="Hide session navigator"><CloseIcon /></button>}
+        <aside className="fixed left-0 top-14 z-30 hidden h-[calc(100dvh-3.5rem)] w-[18rem] flex-col border-r-2 border-[var(--strong-border)] bg-[var(--canvas)] shadow-[2px_0_0_var(--border)] lg:flex" aria-label="Session navigator">
+          <header className="flex min-h-12 items-center border-b border-[var(--border)] px-3">
+            <h1 className="text-[11px] font-bold uppercase tracking-[0.18em] text-[var(--text)]">Sessions</h1>
+            {props.onDesktopClose && <button type="button" onClick={props.onDesktopClose} className="ml-auto flex h-11 w-11 cursor-pointer items-center justify-center rounded-[4px] text-[var(--muted)] hover:bg-[var(--raised)] hover:text-[var(--text)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--selection)]" aria-label="Hide session navigator"><CloseIcon /></button>}
           </header>
           <NavigatorContent {...contentProps} idPrefix={`${generatedId}-desktop`} mobile={false} />
         </aside>
       )}
 
       {mobileOpen && (
-        <div className="fixed inset-0 z-50 flex items-end bg-[#020617]/80 lg:hidden" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) closeMobile(); }}>
-          <section id="mobile-session-navigator" role="dialog" aria-modal="true" aria-labelledby={`${generatedId}-mobile-title`} className="flex max-h-[88dvh] w-full flex-col rounded-t-[10px] border-t-2 border-[#334155] bg-[#0F172A] shadow-[0_-12px_32px_rgba(0,0,0,0.45)]">
-            <header className="flex min-h-14 items-center border-b border-[#334155] px-4">
-              <h1 id={`${generatedId}-mobile-title`} className="text-[11px] font-bold uppercase tracking-[0.18em] text-[#F1F5F9]">Sessions</h1>
-              <button type="button" onClick={closeMobile} className="ml-auto flex h-11 w-11 cursor-pointer items-center justify-center rounded-[4px] text-[#94A3B8] hover:bg-[#1E293B] hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#3B82F6]" aria-label="Close session navigator"><CloseIcon /></button>
+        <div className="fixed inset-0 z-50 flex items-end bg-[color-mix(in_srgb,var(--canvas)_82%,transparent)] lg:hidden" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) closeMobile(); }}>
+          <section id="mobile-session-navigator" role="dialog" aria-modal="true" aria-labelledby={`${generatedId}-mobile-title`} className="flex max-h-[88dvh] w-full flex-col rounded-t-[8px] border-t-2 border-[var(--strong-border)] bg-[var(--canvas)] shadow-[0_-8px_0_var(--border)]">
+            <header className="flex min-h-14 items-center border-b border-[var(--border)] px-4">
+              <h1 id={`${generatedId}-mobile-title`} className="text-[11px] font-bold uppercase tracking-[0.18em] text-[var(--text)]">Sessions</h1>
+              <button type="button" onClick={closeMobile} className="ml-auto flex h-11 w-11 cursor-pointer items-center justify-center rounded-[4px] text-[var(--muted)] hover:bg-[var(--raised)] hover:text-[var(--text)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--selection)]" aria-label="Close session navigator"><CloseIcon /></button>
             </header>
             <NavigatorContent {...contentProps} idPrefix={`${generatedId}-mobile`} mobile onDismiss={closeMobile} />
           </section>

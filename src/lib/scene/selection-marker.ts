@@ -1,10 +1,11 @@
 import * as THREE from 'three';
+import { COZY_THEME } from '../cozy-theme';
 
 export class AgentSelectionMarker {
   private selectedAgentId: string | null = null;
   private geometry = new THREE.RingGeometry(0.38, 0.52, 24);
   private material = new THREE.MeshBasicMaterial({
-    color: 0xf8fafc,
+    color: COZY_THEME.semantic.selection,
     transparent: true,
     opacity: 0.95,
     side: THREE.DoubleSide,

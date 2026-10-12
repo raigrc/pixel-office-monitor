@@ -4,12 +4,19 @@ import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { SMAAPass } from 'three/addons/postprocessing/SMAAPass.js';
-import { ThreeCamera, CameraState } from './three-camera';
+import { ThreeCamera, CameraState, THREE_CAMERA_NEAR } from './three-camera';
 import { ThreeSky, SkyConfig, SkyPreset } from './three-sky';
-import { createTerrainGeometry, createTerrainMaterial, TerrainConfig, PlanetPreset } from './terrain';
-import { createScatterMesh, getScatterObstacles, rebuildScatter, ScatterConfig } from './scatter';
-import { createShip, ShipConfig, Ship } from './ship';
-import { createBuildingGeometry } from './buildings';
+import { createTerrainGeometry, createTerrainMaterial, TerrainConfig } from './terrain';
+import {
+  createScatterMesh,
+  environmentNavigationRevision,
+  getEnvironmentPlacements,
+  getScatterObstacles,
+  rebuildScatter,
+  type ScatterConfig,
+} from './scatter';
+import { createShip, Ship } from './ship';
+import { disposeMesh, SessionWorksites, WORKSITE_FOOTPRINT_RADIUS } from './buildings';
 import { createAstronauts, Astronauts, AstronautState } from './astronauts';
 import { createCrewRig } from './crew-rig';
 import { createBadges } from './indicators';
@@ -21,16 +28,28 @@ import {
   type MotionAgentView,
   type MotionDelta,
   type MotionEnvironment,
+  type MotionPhase,
 } from './walkers';
-import { clearGrid, createNavGrid, rasterizeBuilding, rasterizeCircle, rasterizeShip, type NavGrid } from './navigation';
+import {
+  AGENT_RADIUS,
+  clearGrid,
+  createNavGrid,
+  rasterizeBuilding,
+  rasterizeCircle,
+  rasterizeShip,
+  type NavGrid,
+} from './navigation';
 import { HexCell, hexToKey, getNeighbors, DECK_TOP } from './hex-grid';
 import { Colony } from './colony';
 import { suitColorFor } from './actor-3d-map';
 import { getAgentVisualIdentity } from '../agent-visual-identity';
 import { AgentSelectionMarker } from './selection-marker';
-import type { WorldAgent, WorldState } from '../world/world-types';
+import type { WorldAgent, WorldSession, WorldState } from '../world/world-types';
 import type { ActivityModel } from '../activity/activity-model';
 import { Delegations3D } from './delegations-3d';
+import { COZY_THEME } from '../cozy-theme';
+import { resolveSessionAccent } from '../session-visual-identity';
+import { createCozyMaterial } from './cozy-materials';
 
 export interface ThreeEngineConfig {
   enableBloom?: boolean;
@@ -40,11 +59,18 @@ export interface ThreeEngineConfig {
   sky?: Partial<SkyConfig>;
 }
 
-/** Deterministic accent color per floor id. Stable across snapshots. */
+/** Canonical deterministic accent per session id. Stable across snapshots. */
 function accentFor(id: string): THREE.Color {
-  let hash = 0;
-  for (let i = 0; i < id.length; i++) hash = (hash * 31 + id.charCodeAt(i)) >>> 0;
-  return new THREE.Color().setHSL((hash % 360) / 360, 0.75, 0.55);
+  return new THREE.Color(resolveSessionAccent(id));
+}
+
+export function createSessionDeckMaterials(accent: THREE.Color): THREE.MeshStandardMaterial[] {
+  const trim = new THREE.Color(COZY_THEME.environment.woodDark).lerp(accent, 0.22);
+  return [
+    createCozyMaterial({ recipe: 'wood', color: trim }),
+    createCozyMaterial({ recipe: 'matte', color: COZY_THEME.scene.terrainBands[3] }),
+    createCozyMaterial({ recipe: 'matte', color: COZY_THEME.scene.terrainBands[1] }),
+  ];
 }
 
 function sameKeys(a: Set<string>, b: Set<string>): boolean {
@@ -59,9 +85,20 @@ function safeAspect(w: number, h: number): number {
   return w / h;
 }
 
+export function frameRateForSampleWindow(
+  samples: readonly number[],
+  windowStartedAt: number,
+  now: number,
+): number | null {
+  if (now - windowStartedAt < 1000 || samples.length < 2) return null;
+  const sampleSpan = samples[samples.length - 1] - samples[0];
+  if (sampleSpan <= 0) return null;
+  return Math.round(((samples.length - 1) * 1000) / sampleSpan);
+}
+
 /** Session plot deck radius. Holds the worksite plus the agent ring. */
 const SESSION_DECK_RADIUS = 3.6;
-/** Scatter density after the Phase 1 declutter (was 0.12). */
+/** Sparse environment density after the Phase 1 declutter (was 0.12). */
 const SCATTER_DENSITY = 0.03;
 /** Distance needed to fit a ground radius in current vertical/horizontal FOV. */
 export function framingDistance(radius: number, camera: THREE.PerspectiveCamera): number {
@@ -71,6 +108,49 @@ export function framingDistance(radius: number, camera: THREE.PerspectiveCamera)
   return THREE.MathUtils.clamp(radius / Math.sin(limitingFov / 2), 12, 70);
 }
 
+export function worksiteNavigationKey(
+  sessionIds: readonly string[],
+  positionFor: (sessionId: string) => THREE.Vector3 | null | undefined,
+): string {
+  return [...sessionIds].sort().map((sessionId) => {
+    const position = positionFor(sessionId);
+    return `${sessionId}:${position?.x ?? 0}:${position?.z ?? 0}:${WORKSITE_FOOTPRINT_RADIUS}`;
+  }).join('|');
+}
+
+export function motionEnvironmentNavigationKey(
+  worksiteKey: string,
+  environmentRevision: string,
+): string {
+  return `${worksiteKey}\u0000${environmentRevision}`;
+}
+
+export function motionVisualFor(
+  phase: MotionPhase,
+  status: WorldAgent['status'],
+): Pick<AstronautState, 'clip' | 'badge' | 'working'> {
+  const semantic = (() => {
+    switch (status) {
+      case 'working':
+        return { clip: 'work', badge: 'working', working: true };
+      case 'waiting':
+        return { clip: 'sitIdle', badge: 'waiting', working: false };
+      case 'success':
+        return { clip: 'cheer', badge: 'celebrating', working: false };
+      case 'error':
+        return { clip: 'sitIdle', badge: 'blocked', working: false };
+      case 'idle':
+        return { clip: 'sitIdle', badge: 'none', working: false };
+    }
+  })();
+  const moving = phase === 'entering' || phase === 'leaving';
+  return {
+    clip: moving ? 'walk' : semantic.clip,
+    badge: phase === 'entering' ? 'spawn' : phase === 'leaving' ? 'leave' : semantic.badge,
+    working: !moving && semantic.working,
+  };
+}
+
 export class ThreeEngine {
   private renderer: THREE.WebGLRenderer | null = null;
   private camera: THREE.PerspectiveCamera | null = null;
@@ -78,6 +158,8 @@ export class ThreeEngine {
   private container: HTMLElement | null = null;
   private animationId: number | null = null;
   private mounted = false;
+  private paused = false;
+  private mountGeneration = 0;
 
   private composer: EffectComposer | null = null;
   private bloomPass: UnrealBloomPass | null = null;
@@ -87,12 +169,12 @@ export class ThreeEngine {
 
   private threeCamera: ThreeCamera | null = null;
   private threeSky: ThreeSky | null = null;
+  private skyConfigDirty = false;
 
   private terrain: THREE.Mesh | null = null;
   private scatter: THREE.Mesh | null = null;
   private ship: Ship | null = null;
-  private buildings: Map<string, THREE.Mesh> = new Map();
-  private buildingFootprints = new Map<string, number>();
+  private worksites = new SessionWorksites();
   private decks: Map<string, THREE.Mesh> = new Map();
   private astronauts: Astronauts | null = null;
   private badges: ReturnType<typeof createBadges> | null = null;
@@ -141,18 +223,26 @@ export class ThreeEngine {
 
   private lastFps = 60;
   private fpsSamples: number[] = [];
+  private fpsWindowStartedAt: number | null = null;
   private slowFrameCount = 0;
   private fastFrameCount = 0;
   private lastQualityAdjustment = 0;
   private readonly QUALITY_COOLDOWN = 30000;
   private lastFrameTime = 0;
+  private lastMotionTime = 0;
 
   mount(container: HTMLElement, config?: ThreeEngineConfig): void {
     if (this.mounted) return;
 
     this.container = container;
     this.mounted = true;
-    if (config) this.config = { ...this.config, ...config };
+    if (config) {
+      this.config = {
+        ...this.config,
+        ...config,
+        sky: { ...this.config.sky, ...config.sky },
+      };
+    }
     this.colony.load();
 
     this.renderer = new THREE.WebGLRenderer({
@@ -175,17 +265,19 @@ export class ThreeEngine {
     this.camera = new THREE.PerspectiveCamera(
       50,
       safeAspect(container.clientWidth, container.clientHeight),
-      0.1,
+      THREE_CAMERA_NEAR,
       200
     );
     this.camera.position.set(0, 15, 25);
 
     this.scene = new THREE.Scene();
-    this.scene.background = new THREE.Color(0x1a1a2e);
+    this.scene.background = new THREE.Color(COZY_THEME.environment.night);
 
     this.threeCamera = new ThreeCamera(this.camera, container);
+    this.threeCamera.setPaused(this.paused);
     this.threeSky = new ThreeSky(this.scene, this.renderer);
     this.threeSky.setConfig(this.config.sky);
+    this.skyConfigDirty = false;
 
     this.populateScene();
 
@@ -193,6 +285,8 @@ export class ThreeEngine {
 
     container.appendChild(this.renderer.domElement);
 
+    this.mountGeneration++;
+    this.lastMotionTime = performance.now();
     this.startRenderLoop();
   }
 
@@ -250,7 +344,11 @@ export class ThreeEngine {
     const oldBloom = this.config.enableBloom;
     const oldSMAA = this.config.enableSMAA;
 
-    this.config = { ...this.config, ...config };
+    this.config = {
+      ...this.config,
+      ...config,
+      sky: { ...this.config.sky, ...config.sky },
+    };
 
     if (this.config.renderScale !== oldScale) {
       this.updateRendererSize();
@@ -265,7 +363,12 @@ export class ThreeEngine {
     }
 
     if (this.threeSky && config.sky) {
-      this.threeSky.setConfig(config.sky);
+      if (this.paused) {
+        this.skyConfigDirty = true;
+      } else {
+        this.threeSky.setConfig(config.sky);
+        this.skyConfigDirty = false;
+      }
     }
 
     if ((this.config.enableBloom !== oldBloom || this.config.enableSMAA !== oldSMAA) && this.composer) {
@@ -300,6 +403,8 @@ export class ThreeEngine {
     this.scene = null;
     this.container = null;
     this.mounted = false;
+    this.paused = false;
+    this.lastMotionTime = 0;
   }
 
   private disposeComposer(): void {
@@ -317,8 +422,15 @@ export class ThreeEngine {
   }
 
   private startRenderLoop(): void {
+    if (!this.mounted || this.paused || this.animationId !== null) return;
+    const now = performance.now();
+    this.lastFrameTime = now;
+    this.resetQualitySampling(now);
     const animate = () => {
-      if (!this.mounted) return;
+      if (!this.mounted || this.paused) {
+        this.animationId = null;
+        return;
+      }
       this.animationId = requestAnimationFrame(animate);
       this.render();
     };
@@ -339,9 +451,9 @@ export class ThreeEngine {
     const dt = Math.min((now - this.lastFrameTime) / 1000, 0.1);
     this.lastFrameTime = now;
 
-    this.updateFPS(now);
+    const hasFpsWindow = this.updateFPS(now);
 
-    if (this.config.autoQuality) {
+    if (this.config.autoQuality && hasFpsWindow) {
       this.governQuality(now);
     }
 
@@ -357,12 +469,25 @@ export class ThreeEngine {
     }
   }
 
-  private updateFPS(now: number): void {
+  private resetQualitySampling(now: number): void {
+    this.fpsSamples = [];
+    this.fpsWindowStartedAt = now;
+    this.lastFps = 60;
+    this.slowFrameCount = 0;
+    this.fastFrameCount = 0;
+    this.lastQualityAdjustment = now;
+  }
+
+  private updateFPS(now: number): boolean {
+    if (this.fpsWindowStartedAt === null) this.fpsWindowStartedAt = now;
     this.fpsSamples.push(now);
     while (this.fpsSamples.length > 0 && this.fpsSamples[0] < now - 1000) {
       this.fpsSamples.shift();
     }
-    this.lastFps = this.fpsSamples.length;
+    const fps = frameRateForSampleWindow(this.fpsSamples, this.fpsWindowStartedAt, now);
+    if (fps === null) return false;
+    this.lastFps = fps;
+    return true;
   }
 
   private governQuality(now: number): void {
@@ -410,6 +535,29 @@ export class ThreeEngine {
     return this.mounted && this.scene !== null;
   }
 
+  getMountGeneration(): number {
+    return this.mountGeneration;
+  }
+
+  setPaused(paused: boolean): void {
+    if (this.paused === paused) return;
+    const now = performance.now();
+    if (this.mounted) this.advanceSimulation(now);
+    this.paused = paused;
+    this.threeCamera?.setPaused(paused);
+    if (!this.mounted) return;
+    if (paused) {
+      this.stopRenderLoop();
+      this.particles?.clear();
+    } else {
+      if (this.skyConfigDirty) {
+        this.threeSky?.setConfig(this.config.sky);
+        this.skyConfigDirty = false;
+      }
+      this.startRenderLoop();
+    }
+  }
+
   getCamera(): THREE.PerspectiveCamera | null {
     return this.camera;
   }
@@ -447,7 +595,7 @@ export class ThreeEngine {
   }
 
   setSkyPreset(preset: SkyPreset): void {
-    this.threeSky?.setConfig({ preset });
+    this.setConfig({ sky: { preset } });
   }
 
   populateScene(): void {
@@ -503,13 +651,15 @@ export class ThreeEngine {
    * Active session plots, worksites, agents, and orchestrator markers
    * reconcile by stable id. Missing ids leave and dispose.
    */
-  syncWorld(world: WorldState): void {
+  syncWorld(world: WorldState, options: { animateEntrances?: boolean } = {}): void {
     if (!this.scene) return;
+    this.advanceSimulation(performance.now());
     const sessionIds = world.sessions.map((s) => s.id);
-    this.syncPlots(sessionIds);
+    this.syncPlots(world.sessions);
     const environment = this.buildMotionEnvironment(world.agents);
     this.applyMotionDelta(this.motion.reconcile(world.agents, environment, {
       activeWorldIds: new Set(sessionIds),
+      animateEntrances: options.animateEntrances,
     }));
     this.syncOrchestratorMarkers(this.motion.snapshot());
     this.frameSessions(sessionIds);
@@ -524,6 +674,7 @@ export class ThreeEngine {
     this.reducedMotion = enabled;
     this.threeCamera?.setReducedMotion(enabled);
     this.delegations?.setReducedMotion(enabled);
+    this.astronauts?.setReducedMotion(enabled);
     if (enabled) this.particles?.clear();
     this.applyMotionDelta(this.motion.setReducedMotion(enabled));
   }
@@ -580,22 +731,7 @@ export class ThreeEngine {
     }
   }
 
-  private clipBadgeFor(status: WorldAgent['status']): { clip: string; badge: string; working: boolean } {
-    switch (status) {
-      case 'working':
-        return { clip: 'work', badge: 'working', working: true };
-      case 'waiting':
-        return { clip: 'sitIdle', badge: 'waiting', working: false };
-      case 'success':
-        return { clip: 'cheer', badge: 'celebrating', working: false };
-      case 'error':
-        return { clip: 'sitIdle', badge: 'blocked', working: false };
-      case 'idle':
-        return { clip: 'sitIdle', badge: 'none', working: false };
-    }
-  }
-
-  /** Rebuild scatter when the active plot footprint changes so rocks miss decks. */
+  /** Rebuild static environment when active plot footprints change so props miss decks. */
   private syncScatterFootprint(activeIds: Set<string>): void {
     if (!this.scene || !this.scatter) return;
     const cells = new Map<string, HexCell>();
@@ -633,9 +769,10 @@ export class ThreeEngine {
   }
 
   /** Active plots only. Fallow Colony records keep their ground for return visits. */
-  private syncPlots(sessionIds: string[]): void {
+  private syncPlots(sessions: readonly WorldSession[]): void {
     if (!this.scene) return;
 
+    const sessionIds = sessions.map((session) => session.id);
     this.colony.reconcile(sessionIds);
     const active = new Set(this.colony.activeIds());
 
@@ -649,58 +786,27 @@ export class ThreeEngine {
         const deckGeo = new THREE.CylinderGeometry(SESSION_DECK_RADIUS, SESSION_DECK_RADIUS, DECK_TOP, 6);
         // Base at y=0, top face exactly at DECK_TOP.
         deckGeo.translate(0, DECK_TOP / 2, 0);
-        const deckMat = new THREE.MeshStandardMaterial({ roughness: 0.85, metalness: 0.15 });
-        deck = new THREE.Mesh(deckGeo, deckMat);
+        deck = new THREE.Mesh(deckGeo, createSessionDeckMaterials(accent));
         deck.receiveShadow = true;
         this.scene.add(deck);
         this.decks.set(floorId, deck);
       }
       deck.position.set(pos.x, 0, pos.z);
-      (deck.material as THREE.MeshStandardMaterial).color.copy(accent).multiplyScalar(0.35);
-
-      const existing = this.buildings.get(floorId);
-      if (existing) {
-        existing.position.set(pos.x, DECK_TOP, pos.z);
-        (existing.material as THREE.MeshStandardMaterial).color.copy(accent);
-        continue;
-      }
-
-      const { geometry, recipe } = createBuildingGeometry(floorId);
-      const material = new THREE.MeshStandardMaterial({ color: accent.clone() });
-      const mesh = new THREE.Mesh(geometry, material);
-      // Footprints run larger than plots. A uniform 0.6 keeps roofs on decks.
-      mesh.scale.setScalar(0.6);
-      mesh.position.set(pos.x, DECK_TOP, pos.z);
-      mesh.castShadow = true;
-      mesh.receiveShadow = true;
-      this.scene.add(mesh);
-      this.buildings.set(floorId, mesh);
-      this.buildingFootprints.set(floorId, recipe.footprintRadius * 0.6);
     }
 
-    for (const [id, mesh] of this.buildings) {
-      if (!active.has(id)) {
-        this.scene?.remove(mesh);
-        mesh.geometry.dispose();
-        if (Array.isArray(mesh.material)) {
-          mesh.material.forEach((m) => m.dispose());
-        } else {
-          mesh.material.dispose();
-        }
-        this.buildings.delete(id);
-        this.buildingFootprints.delete(id);
-      }
-    }
+    this.worksites.sync(
+      this.scene,
+      sessions,
+      (sessionId) => {
+        const position = this.colony.positionOf(sessionId);
+        return position ? new THREE.Vector3(position.x, DECK_TOP, position.z) : undefined;
+      },
+      accentFor,
+    );
 
     for (const [id, deck] of this.decks) {
       if (!active.has(id)) {
-        this.scene?.remove(deck);
-        deck.geometry.dispose();
-        if (Array.isArray(deck.material)) {
-          deck.material.forEach((m) => m.dispose());
-        } else {
-          deck.material.dispose();
-        }
+        disposeMesh(deck);
         this.decks.delete(id);
       }
     }
@@ -711,10 +817,10 @@ export class ThreeEngine {
   private buildMotionEnvironment(worldAgents: readonly WorldAgent[]): MotionEnvironment {
     if (!this.ship) throw new Error('Ship must exist before world sync');
     const activeIds = this.colony.activeIds().sort();
-    const key = activeIds.map((id) => {
-      const position = this.colony.positionOf(id);
-      return `${id}:${position?.x ?? 0}:${position?.z ?? 0}:${this.buildingFootprints.get(id) ?? 0}`;
-    }).join('|');
+    const key = motionEnvironmentNavigationKey(
+      worksiteNavigationKey(activeIds, (sessionId) => this.colony.positionOf(sessionId)),
+      environmentNavigationRevision(getEnvironmentPlacements(this.scatter)),
+    );
     if (key !== this.motionEnvironmentKey) {
       this.motionEnvironmentKey = key;
       this.motionEnvironmentRevision++;
@@ -722,10 +828,15 @@ export class ThreeEngine {
       for (const id of activeIds) {
         const position = this.colony.positionOf(id);
         if (!position) continue;
-        rasterizeBuilding(this.navGrid, position, this.buildingFootprints.get(id) ?? 1.5);
+        rasterizeBuilding(this.navGrid, position, WORKSITE_FOOTPRINT_RADIUS);
       }
       for (const obstacle of getScatterObstacles(this.scatter)) {
-        rasterizeCircle(this.navGrid, obstacle.position.x, obstacle.position.z, obstacle.radius);
+        rasterizeCircle(
+          this.navGrid,
+          obstacle.position.x,
+          obstacle.position.z,
+          obstacle.radius + AGENT_RADIUS,
+        );
       }
       rasterizeShip(this.navGrid, this.shipPosition(), 4.5);
     }
@@ -737,7 +848,7 @@ export class ThreeEngine {
       home.y = DECK_TOP;
       sites.set(
         agent.id,
-        workSiteForAgent(home, agent, this.buildingFootprints.get(agent.worldId) ?? 1.5),
+        workSiteForAgent(home, agent, WORKSITE_FOOTPRINT_RADIUS),
       );
     }
     this.motionEnvironment = {
@@ -752,35 +863,32 @@ export class ThreeEngine {
   private applyMotionDelta(delta: MotionDelta): void {
     if (!this.astronauts) return;
     for (const view of delta.upserted) {
-      const semantic = this.clipBadgeFor(view.agent.status);
+      const visual = motionVisualFor(view.phase, view.agent.status);
       const identity = getAgentVisualIdentity(view.agent.agentKey);
-      const moving = view.phase !== 'onsite';
-      const clip = moving ? 'walk' : semantic.clip;
-      const badge = view.phase === 'entering' ? 'spawn' : view.phase === 'leaving' ? 'leave' : semantic.badge;
       const live = this.agents.get(view.agent.id);
       if (!live) {
         const state: AstronautState = {
           id: view.agent.id,
           position: view.position.clone(),
           target: view.target.clone(),
-          clip,
+          clip: visual.clip,
           clipTime: 0,
           frame: 0,
           suitColor: suitColorFor(view.agent.agentKey),
           detailColor: new THREE.Color(identity.detail),
           accessory: identity.accessory,
           faceIndex: Math.abs(view.agent.seatIndex) % 16,
-          badge,
-          working: !moving && semantic.working,
+          badge: visual.badge,
+          working: visual.working,
         };
         if (!this.astronauts.addAgent(state)) continue;
         this.agents.set(view.agent.id, state);
       } else {
         live.target.copy(view.target);
         live.position.copy(view.position);
-        live.clip = clip;
-        live.badge = badge;
-        live.working = !moving && semantic.working;
+        live.clip = visual.clip;
+        live.badge = visual.badge;
+        live.working = visual.working;
         live.suitColor.copy(suitColorFor(view.agent.agentKey));
         live.detailColor.set(identity.detail);
         live.accessory = identity.accessory;
@@ -797,7 +905,11 @@ export class ThreeEngine {
       this.emitTimers.delete(id);
     }
 
-    if (!this.reducedMotion) {
+    if (delta.upserted.length > 0 || delta.removedIds.length > 0) {
+      this.astronauts.refreshBounds();
+    }
+
+    if (!this.paused && !this.reducedMotion) {
       for (const event of delta.events) {
         const position = this.agents.get(event.agentId)?.position;
         if (!position) continue;
@@ -810,7 +922,9 @@ export class ThreeEngine {
 
   private ringAssets(): { geometry: THREE.TorusGeometry; material: THREE.MeshBasicMaterial } {
     if (!this.ringGeometry) this.ringGeometry = new THREE.TorusGeometry(0.55, 0.06, 8, 32);
-    if (!this.ringMaterial) this.ringMaterial = new THREE.MeshBasicMaterial({ color: 0xffc86a });
+    if (!this.ringMaterial) {
+      this.ringMaterial = new THREE.MeshBasicMaterial({ color: COZY_THEME.semantic.waiting });
+    }
     return { geometry: this.ringGeometry, material: this.ringMaterial };
   }
 
@@ -844,9 +958,7 @@ export class ThreeEngine {
   update(time: number, dt: number): void {
     if (!this.mounted) return;
 
-    const motionDelta = this.motion.advance(dt);
-    this.applyMotionDelta(motionDelta);
-    this.syncOrchestratorMarkers(motionDelta.upserted);
+    this.advanceSimulation(time);
     this.delegations?.update(time, this.agents);
     this.selectionMarker?.update(this.agents);
     this.astronauts?.update(time, dt);
@@ -856,14 +968,24 @@ export class ThreeEngine {
     this.astronauts?.setUniforms({
       uTime: time * 0.001,
       uSunDirection: this.threeSky?.getSunLight()?.position.clone().normalize() ?? new THREE.Vector3(0, 1, 0),
-      uSunColor: this.threeSky?.getSunLight()?.color ?? new THREE.Color(0xffffee),
+      uSunColor: this.threeSky?.getSunLight()?.color ?? new THREE.Color(COZY_THEME.ui.text),
       uSunIntensity: this.threeSky?.getSunLight()?.intensity ?? 1,
-      uAmbientColor: this.threeSky?.getAmbientLight()?.color ?? new THREE.Color(0x333344),
+      uAmbientColor: this.threeSky?.getAmbientLight()?.color ?? new THREE.Color(COZY_THEME.scene.terraSky.nightAmbient),
       uAmbientIntensity: this.threeSky?.getAmbientLight()?.intensity ?? 0.5,
       uFillDirection: this.threeSky?.getFillLight()?.position.clone().normalize() ?? new THREE.Vector3(-0.5, 0.75, -0.25).normalize(),
-      uFillColor: this.threeSky?.getFillLight()?.color ?? new THREE.Color(0x9db8e8),
+      uFillColor: this.threeSky?.getFillLight()?.color ?? new THREE.Color(COZY_THEME.scene.terraSky.nightFill),
       uFillIntensity: this.threeSky?.getFillLight()?.intensity ?? 0,
     });
+  }
+
+  private advanceSimulation(now: number): void {
+    const elapsed = this.lastMotionTime === 0
+      ? 0
+      : Math.max(0, (now - this.lastMotionTime) / 1000);
+    this.lastMotionTime = now;
+    const motionDelta = this.motion.advance(elapsed);
+    this.applyMotionDelta(motionDelta);
+    this.syncOrchestratorMarkers(motionDelta.upserted);
   }
 
   pickAgent(clientX: number, clientY: number): string | null {
@@ -950,24 +1072,10 @@ export class ThreeEngine {
     this.ringGeometry = null;
     this.ringMaterial = null;
 
-    for (const mesh of this.buildings.values()) {
-      mesh.geometry.dispose();
-      if (Array.isArray(mesh.material)) {
-        mesh.material.forEach((m) => m.dispose());
-      } else {
-        mesh.material.dispose();
-      }
-    }
-    this.buildings.clear();
-    this.buildingFootprints.clear();
+    this.worksites.dispose();
 
     for (const deck of this.decks.values()) {
-      deck.geometry.dispose();
-      if (Array.isArray(deck.material)) {
-        deck.material.forEach((m) => m.dispose());
-      } else {
-        deck.material.dispose();
-      }
+      disposeMesh(deck);
     }
     this.decks.clear();
 
@@ -994,11 +1102,11 @@ export class ThreeEngine {
     this.terrain = null;
     this.scatter = null;
     this.lastFramedSessionsKey = '';
-    this.buildings.clear();
     this.decks.clear();
     this.lastScatterKeys = new Set();
     this.agents.clear();
     this.activity = null;
+    this.skyConfigDirty = false;
     this.motion.reset();
     this.navGrid = createNavGrid();
     this.motionEnvironment = null;

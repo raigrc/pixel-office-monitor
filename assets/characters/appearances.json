@@ -1,0 +1,93 @@
+{
+  "version": 1,
+  "appearances": {
+    "ai-systems": {
+      "layers": { "body": "tall", "hair": "bun", "top": "coat", "bottom": "loafers", "face": "visor", "accessory": "neural-node" },
+      "palette": { "skin": "#8C5A3C", "skinShadow": "#633A29", "hair": "#251D28", "hairShadow": "#151117", "top": "#E4E8DF", "topShadow": "#AAB7AC", "bottom": "#3A4850", "bottomShadow": "#232C31", "detail": "#72C5B4", "detailShadow": "#417D73", "accessory": "#7DE1C2", "accessoryShadow": "#397C6B", "highlight": "#F5F0DE", "outline": "#211D24" }
+    },
+    "architect": {
+      "layers": { "body": "tall", "hair": "swept", "top": "vest", "bottom": "loafers", "face": "glasses", "accessory": "blueprint" },
+      "palette": { "skin": "#C98662", "skinShadow": "#925A42", "hair": "#5A382B", "hairShadow": "#35201B", "top": "#667FA3", "topShadow": "#40536F", "bottom": "#384154", "bottomShadow": "#242A36", "detail": "#B9D5E7", "detailShadow": "#6D8FA8", "accessory": "#85B9DF", "accessoryShadow": "#416E9A", "highlight": "#F1E9D5", "outline": "#252331" }
+    },
+    "automation-engineer": {
+      "layers": { "body": "broad", "hair": "mohawk", "top": "overalls", "bottom": "boots", "face": "beard", "accessory": "wrench" },
+      "palette": { "skin": "#A96D4C", "skinShadow": "#754631", "hair": "#392620", "hairShadow": "#201614", "top": "#A36D43", "topShadow": "#70482F", "bottom": "#39475B", "bottomShadow": "#222B38", "detail": "#D7B184", "detailShadow": "#8F6C48", "accessory": "#C8D1D4", "accessoryShadow": "#737F84", "highlight": "#F2E8D5", "outline": "#252127" }
+    },
+    "devops": {
+      "layers": { "body": "compact", "hair": "crop", "top": "jacket", "bottom": "boots", "face": "calm", "accessory": "headset" },
+      "palette": { "skin": "#D99A73", "skinShadow": "#A5674C", "hair": "#202733", "hairShadow": "#12171F", "top": "#6D719B", "topShadow": "#464A6D", "bottom": "#34384D", "bottomShadow": "#202332", "detail": "#B9BAD5", "detailShadow": "#76799B", "accessory": "#ABB6C0", "accessoryShadow": "#596872", "highlight": "#F4EADA", "outline": "#20212B" }
+    },
+    "documentation": {
+      "layers": { "body": "soft", "hair": "bob", "top": "sweater", "bottom": "skirt", "face": "freckles", "accessory": "pen" },
+      "palette": { "skin": "#E4AE87", "skinShadow": "#AD7557", "hair": "#704934", "hairShadow": "#442A21", "top": "#987864", "topShadow": "#674E41", "bottom": "#4B4050", "bottomShadow": "#302936", "detail": "#D7BDAA", "detailShadow": "#967A69", "accessory": "#D8C584", "accessoryShadow": "#88763F", "highlight": "#F6EEDC", "outline": "#29222A" }
+    },
+    "project-manager": {
+      "layers": { "body": "tall", "hair": "pony", "top": "vest", "bottom": "loafers", "face": "smile", "accessory": "clipboard" },
+      "palette": { "skin": "#B87555", "skinShadow": "#824B38", "hair": "#332A28", "hairShadow": "#1C1818", "top": "#9B824D", "topShadow": "#6A5735", "bottom": "#424653", "bottomShadow": "#292C35", "detail": "#D8C688", "detailShadow": "#938145", "accessory": "#D8B85E", "accessoryShadow": "#8D6E2D", "highlight": "#F5EBD5", "outline": "#252229" }
+    },
+    "qa-engineer": {
+      "layers": { "body": "compact", "hair": "curls", "top": "jacket", "bottom": "sneakers", "face": "glasses", "accessory": "magnifier" },
+      "palette": { "skin": "#6F4635", "skinShadow": "#4C2D24", "hair": "#241B24", "hairShadow": "#141015", "top": "#9B646C", "topShadow": "#673F47", "bottom": "#3D4350", "bottomShadow": "#262B34", "detail": "#D6A9AE", "detailShadow": "#8C646A", "accessory": "#B9CED4", "accessoryShadow": "#647D84", "highlight": "#F2E8D8", "outline": "#211D24" }
+    },
+    "researcher": {
+      "layers": { "body": "soft", "hair": "bun", "top": "coat", "bottom": "skirt", "face": "freckles", "accessory": "book" },
+      "palette": { "skin": "#C78A69", "skinShadow": "#925E48", "hair": "#573B2F", "hairShadow": "#33231E", "top": "#56827D", "topShadow": "#365A57", "bottom": "#3C4650", "bottomShadow": "#252D34", "detail": "#A6CDC6", "detailShadow": "#648D87", "accessory": "#C18A65", "accessoryShadow": "#7E5540", "highlight": "#F5ECD7", "outline": "#242328" }
+    },
+    "security-reviewer": {
+      "layers": { "body": "broad", "hair": "crop", "top": "jacket", "bottom": "boots", "face": "visor", "accessory": "shield" },
+      "palette": { "skin": "#704735", "skinShadow": "#4D2F25", "hair": "#1E2328", "hairShadow": "#101316", "top": "#697487", "topShadow": "#424B5A", "bottom": "#303944", "bottomShadow": "#1D242B", "detail": "#AFB9C8", "detailShadow": "#697687", "accessory": "#91A6C0", "accessoryShadow": "#4D6380", "highlight": "#ECE6D7", "outline": "#1D2025" }
+    },
+    "senior-engineer": {
+      "layers": { "body": "compact", "hair": "swept", "top": "hoodie", "bottom": "sneakers", "face": "beard", "accessory": "laptop" },
+      "palette": { "skin": "#D0946F", "skinShadow": "#9B624A", "hair": "#4B3027", "hairShadow": "#2B1C19", "top": "#6576A0", "topShadow": "#414E70", "bottom": "#353A4A", "bottomShadow": "#222631", "detail": "#B2BFDB", "detailShadow": "#6E7DA0", "accessory": "#8AA5C1", "accessoryShadow": "#4C647C", "highlight": "#F1E8D7", "outline": "#24222A" }
+    },
+    "build": {
+      "layers": { "body": "broad", "hair": "crop", "top": "overalls", "bottom": "boots", "face": "calm", "accessory": "hard-hat" },
+      "palette": { "skin": "#B77350", "skinShadow": "#82482F", "hair": "#3D2B22", "hairShadow": "#221914", "top": "#9D6947", "topShadow": "#69442F", "bottom": "#3D4655", "bottomShadow": "#262D37", "detail": "#D1A785", "detailShadow": "#89664C", "accessory": "#D6A23F", "accessoryShadow": "#8E6727", "highlight": "#F4E8D1", "outline": "#252126" }
+    },
+    "plan": {
+      "layers": { "body": "tall", "hair": "bob", "top": "vest", "bottom": "loafers", "face": "glasses", "accessory": "compass" },
+      "palette": { "skin": "#E0A47E", "skinShadow": "#A96D51", "hair": "#49362F", "hairShadow": "#2A211E", "top": "#687FA0", "topShadow": "#435670", "bottom": "#3E4554", "bottomShadow": "#272C36", "detail": "#B7C9DC", "detailShadow": "#7189A2", "accessory": "#C8D6D8", "accessoryShadow": "#758B91", "highlight": "#F4EAD7", "outline": "#25232B" }
+    },
+    "general": {
+      "layers": { "body": "soft", "hair": "curls", "top": "hoodie", "bottom": "sneakers", "face": "smile", "accessory": "coffee" },
+      "palette": { "skin": "#9A6046", "skinShadow": "#6A3C2D", "hair": "#2D2423", "hairShadow": "#191414", "top": "#737C88", "topShadow": "#4B535E", "bottom": "#3A3F49", "bottomShadow": "#24282F", "detail": "#BEC5CC", "detailShadow": "#7A838D", "accessory": "#B78255", "accessoryShadow": "#754E33", "highlight": "#F1E8D7", "outline": "#222126" }
+    },
+    "explore": {
+      "layers": { "body": "compact", "hair": "mohawk", "top": "jacket", "bottom": "boots", "face": "visor", "accessory": "binoculars" },
+      "palette": { "skin": "#C18160", "skinShadow": "#8C533D", "hair": "#443126", "hairShadow": "#281D18", "top": "#638168", "topShadow": "#405845", "bottom": "#39463C", "bottomShadow": "#242D27", "detail": "#AFCEB1", "detailShadow": "#6D8E71", "accessory": "#91BAC2", "accessoryShadow": "#527983", "highlight": "#F3E9D6", "outline": "#222522" }
+    },
+    "scout": {
+      "layers": { "body": "soft", "hair": "pony", "top": "sweater", "bottom": "skirt", "face": "freckles", "accessory": "satchel" },
+      "palette": { "skin": "#7F4F39", "skinShadow": "#563225", "hair": "#201B22", "hairShadow": "#111013", "top": "#716A91", "topShadow": "#484360", "bottom": "#3E394D", "bottomShadow": "#272431", "detail": "#BBB4D0", "detailShadow": "#777091", "accessory": "#A9794E", "accessoryShadow": "#694A30", "highlight": "#F0E7D6", "outline": "#201D24" }
+    },
+    "title": {
+      "layers": { "body": "tall", "hair": "swept", "top": "sweater", "bottom": "loafers", "face": "calm", "accessory": "name-card" },
+      "palette": { "skin": "#D49A75", "skinShadow": "#9C664E", "hair": "#504039", "hairShadow": "#302724", "top": "#727B87", "topShadow": "#4A535E", "bottom": "#3B414B", "bottomShadow": "#262A31", "detail": "#BDC3CA", "detailShadow": "#7A828B", "accessory": "#D2C59D", "accessoryShadow": "#887A53", "highlight": "#F3EAD8", "outline": "#252329" }
+    },
+    "summary": {
+      "layers": { "body": "compact", "hair": "bob", "top": "coat", "bottom": "sneakers", "face": "glasses", "accessory": "notes" },
+      "palette": { "skin": "#B97657", "skinShadow": "#824B39", "hair": "#352923", "hairShadow": "#1D1815", "top": "#70808F", "topShadow": "#485663", "bottom": "#39414A", "bottomShadow": "#242A30", "detail": "#B9C6D0", "detailShadow": "#748592", "accessory": "#D0BE91", "accessoryShadow": "#877443", "highlight": "#F4EAD5", "outline": "#222126" }
+    },
+    "compaction": {
+      "layers": { "body": "broad", "hair": "crop", "top": "vest", "bottom": "boots", "face": "beard", "accessory": "compressor" },
+      "palette": { "skin": "#8D5741", "skinShadow": "#603729", "hair": "#2A2428", "hairShadow": "#171417", "top": "#766F84", "topShadow": "#4C4658", "bottom": "#393641", "bottomShadow": "#24222A", "detail": "#C0BAC9", "detailShadow": "#7E7789", "accessory": "#A6A0B2", "accessoryShadow": "#625C70", "highlight": "#F0E7D5", "outline": "#211F23" }
+    },
+    "orchestrator": {
+      "layers": { "body": "broad", "hair": "swept", "top": "jacket", "bottom": "boots", "face": "smile", "accessory": "radio" },
+      "palette": { "skin": "#B87552", "skinShadow": "#824A35", "hair": "#2A2224", "hairShadow": "#171316", "top": "#A9823E", "topShadow": "#705628", "bottom": "#343844", "bottomShadow": "#20232B", "detail": "#DDC57F", "detailShadow": "#927C3D", "accessory": "#BDC7CC", "accessoryShadow": "#67767C", "highlight": "#F6EBCF", "outline": "#211E22" }
+    },
+    "intern": {
+      "layers": { "body": "compact", "hair": "curls", "top": "hoodie", "bottom": "sneakers", "face": "freckles", "accessory": "cap" },
+      "palette": { "skin": "#D99C76", "skinShadow": "#A2674D", "hair": "#54392D", "hairShadow": "#31231D", "top": "#737D89", "topShadow": "#4B5560", "bottom": "#3D444D", "bottomShadow": "#272C32", "detail": "#BDC5CD", "detailShadow": "#7B858E", "accessory": "#8B99A8", "accessoryShadow": "#53616E", "highlight": "#F3EAD9", "outline": "#242228" }
+    },
+    "unknown": {
+      "layers": { "body": "soft", "hair": "mohawk", "top": "sweater", "bottom": "loafers", "face": "calm", "accessory": "question-pin" },
+      "palette": { "skin": "#9D644A", "skinShadow": "#6D3E2F", "hair": "#342A27", "hairShadow": "#1D1817", "top": "#6B747F", "topShadow": "#454D56", "bottom": "#383E47", "bottomShadow": "#23282E", "detail": "#B6BDC5", "detailShadow": "#737C85", "accessory": "#B9A96F", "accessoryShadow": "#75683C", "highlight": "#F0E8D7", "outline": "#222125" }
+    },
+    "fallback": {
+      "layers": { "body": "compact", "hair": "crop", "top": "hoodie", "bottom": "sneakers", "face": "calm", "accessory": "question-pin" },
+      "palette": { "skin": "#B47A5B", "skinShadow": "#80503C", "hair": "#373137", "hairShadow": "#201C20", "top": "#69737D", "topShadow": "#454D55", "bottom": "#383E46", "bottomShadow": "#24282E", "detail": "#B4BDC5", "detailShadow": "#727C84", "accessory": "#B7A86F", "accessoryShadow": "#75683D", "highlight": "#EFE7D6", "outline": "#222126" }
+    }
+  }
+}

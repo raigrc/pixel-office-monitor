@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import * as THREE from 'three';
 import {
   computeLightingProfile,
   NIGHT_AMBIENT_FLOOR,
@@ -8,11 +9,24 @@ import {
   type SkyPreset,
 } from '../three-sky';
 import { deriveTimeOfDayFromDate, normalizeTimeOfDay } from '../lighting-time';
+import { COZY_THEME } from '../../cozy-theme';
 
 const PRESETS: SkyPreset[] = ['luna', 'mars', 'terra'];
 
 function channels(hex: number): [number, number, number] {
   return [(hex >> 16) & 255, (hex >> 8) & 255, hex & 255];
+}
+
+function relativeLuminance(hex: number): number {
+  const linear = channels(hex).map((channel) => {
+    const value = channel / 255;
+    return value <= 0.04045 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4;
+  });
+  return 0.2126 * linear[0] + 0.7152 * linear[1] + 0.0722 * linear[2];
+}
+
+function availableLight(profile: ReturnType<typeof computeLightingProfile>): number {
+  return profile.sunIntensity + profile.ambientIntensity + profile.fillIntensity;
 }
 
 describe('lighting stages (1.5B)', () => {
@@ -43,6 +57,17 @@ describe('lighting stages (1.5B)', () => {
 });
 
 describe('readable night floor (1.5C)', () => {
+  it('uses canonical cozy Terra daylight and blue-charcoal night colors', () => {
+    const day = computeLightingProfile(12, 'terra');
+    const night = computeLightingProfile(2, 'terra');
+    expect(day.zenithHex).toBe(new THREE.Color(COZY_THEME.scene.terraSky.dayZenith).getHex());
+    expect(day.horizonHex).toBe(new THREE.Color(COZY_THEME.scene.terraSky.dayHorizon).getHex());
+    expect(day.groundHex).toBe(new THREE.Color(COZY_THEME.scene.terraSky.dayGround).getHex());
+    expect(night.zenithHex).toBe(new THREE.Color(COZY_THEME.scene.terraSky.nightZenith).getHex());
+    expect(night.horizonHex).toBe(new THREE.Color(COZY_THEME.scene.terraSky.nightHorizon).getHex());
+    expect(night.groundHex).toBe(new THREE.Color(COZY_THEME.scene.terraSky.nightGround).getHex());
+  });
+
   it('kills directional sun through full night on every preset', () => {
     for (const preset of PRESETS) {
       expect(computeLightingProfile(2, preset).sunIntensity).toBe(0);
@@ -68,6 +93,59 @@ describe('readable night floor (1.5C)', () => {
       expect(night.fillIntensity).toBeGreaterThanOrEqual(0.6);
       expect(night.ambientIntensity + night.fillIntensity).toBeGreaterThanOrEqual(1.05);
     }
+  });
+
+  it('keeps established Terra night ambient and fill floors', () => {
+    const night = computeLightingProfile(1, 'terra');
+
+    expect(night.sunIntensity).toBe(0);
+    expect(night.ambientIntensity).toBe(0.48);
+    expect(night.fillIntensity).toBe(0.65);
+    expect(availableLight(night)).toBe(1.13);
+  });
+
+  it('preserves the accepted Terra noon profile', () => {
+    const noon = computeLightingProfile(12, 'terra');
+
+    expect(noon.sunIntensity).toBeCloseTo(1.5197506401, 10);
+    expect(noon.ambientIntensity).toBe(0.48);
+    expect(noon.fillIntensity).toBe(0);
+  });
+
+  it('keeps 19:00 Terra terrain bands and worksite bodies distinguishable', () => {
+    const dusk = computeLightingProfile(19, 'terra');
+    const light = availableLight(dusk);
+    const darkestTerrain = relativeLuminance(0x29372a) * light;
+    const brightestTerrain = relativeLuminance(0x566a52) * light;
+    const worksiteBody = relativeLuminance(0xd8c8a7) * light;
+
+    expect(dusk.ambientIntensity).toBeCloseTo(0.8179972565, 10);
+    expect(dusk.fillIntensity).toBeCloseTo(0.727297668, 10);
+    expect(light).toBeCloseTo(1.5452949246, 10);
+    expect(brightestTerrain - darkestTerrain).toBeGreaterThan(0.14);
+    expect(worksiteBody - brightestTerrain).toBeGreaterThan(0.7);
+  });
+
+  it('makes representative Terra dusk materially brighter than full night', () => {
+    const dusk = computeLightingProfile(19, 'terra');
+    const night = computeLightingProfile(1, 'terra');
+
+    expect(availableLight(dusk)).toBeGreaterThan(availableLight(night) * 1.35);
+    expect(dusk.stage).toBe('dusk');
+    expect(night.stage).toBe('night');
+  });
+
+  it('does not apply the Terra sunset lift to dawn or other planets', () => {
+    const dawn = computeLightingProfile(6, 'terra');
+    const lunaDusk = computeLightingProfile(19, 'luna');
+    const marsDusk = computeLightingProfile(19, 'mars');
+
+    expect(dawn.ambientIntensity).toBe(0.48);
+    expect(dawn.fillIntensity).toBe(0.325);
+    expect(lunaDusk.ambientIntensity).toBe(0.48);
+    expect(lunaDusk.fillIntensity).toBeCloseTo(0.4814814815, 10);
+    expect(marsDusk.ambientIntensity).toBe(0.48);
+    expect(marsDusk.fillIntensity).toBeCloseTo(0.4814814815, 10);
   });
 
   it('holds full day sun at noon and a reduced dusk response', () => {
@@ -109,7 +187,10 @@ describe('smooth transitions (1.5B)', () => {
         const next = computeLightingProfile(m / 60, preset);
         expect(Math.abs(next.sunIntensity - prev.sunIntensity)).toBeLessThan(0.35);
         expect(Math.abs(next.ambientIntensity - prev.ambientIntensity)).toBeLessThan(0.1);
-        expect(Math.abs(next.fillIntensity - prev.fillIntensity)).toBeLessThan(0.1);
+        expect(
+          Math.abs(next.fillIntensity - prev.fillIntensity),
+          `${preset} fill at ${m / 60}:00`,
+        ).toBeLessThan(0.1);
         expect(Math.abs(next.daylight - prev.daylight)).toBeLessThan(0.15);
         expect(Math.abs(next.duskWeight - prev.duskWeight)).toBeLessThan(0.3);
         prev = next;

@@ -98,7 +98,7 @@ describe("roster room", () => {
     const defaults = DEFAULT_VISIBLE_ROLE_KEYS.map((key) => getDeskAnchor(seatForAgent(key)));
     expect(new Set(defaults.slice(0, 4).map((desk) => desk.furnitureOrigin.x)).size).toBe(4);
     expect(defaults[4].furnitureOrigin.x).toBe(defaults[0].furnitureOrigin.x);
-    expect(defaults[10].furnitureOrigin).toEqual({ x: 168, y: 192 });
+    expect(defaults[10].furnitureOrigin).toEqual({ x: 224, y: 208 });
     expect(Object.keys(DESK_ANCHORS)).toHaveLength(16);
   });
 

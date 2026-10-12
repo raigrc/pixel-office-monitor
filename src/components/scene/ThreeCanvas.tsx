@@ -5,6 +5,7 @@ import { threeEngine } from "@/lib/scene/three-engine";
 import { loadSettings, applySettingsToEngine } from "@/lib/scene/settings3d";
 import type { WorldState } from "@/lib/world/world-types";
 import type { ActivityModel } from "@/lib/activity/activity-model";
+import { decideWorldSync } from "@/lib/scene/scene-lifecycle";
 
 interface ThreeCanvasProps {
   world: WorldState;
@@ -12,10 +13,13 @@ interface ThreeCanvasProps {
   activeSessionId: string | null;
   selectedActorId: string | null;
   onAgentClick: (actorId: string) => void;
+  active: boolean;
+  streamHydrated: boolean;
 }
 
-export default function ThreeCanvas({ world, activity, activeSessionId, selectedActorId, onAgentClick }: ThreeCanvasProps) {
+export default function ThreeCanvas({ world, activity, activeSessionId, selectedActorId, onAgentClick, active, streamHydrated }: ThreeCanvasProps) {
   const containerRef = useRef<HTMLDivElement>(null);
+  const hydratedEngineGeneration = useRef<number | null>(null);
   const [identifiedActorId, setIdentifiedActorId] = useState<string | null>(null);
   const sessionKey = world.sessions.map((session) => session.id).sort().join(",");
   const selectableActorIds = world.agents
@@ -26,6 +30,7 @@ export default function ThreeCanvas({ world, activity, activeSessionId, selected
   useEffect(() => {
     const el = containerRef.current;
     if (!el) return;
+    threeEngine.setPaused(true);
     threeEngine.mount(el);
     const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
     const syncReducedMotion = () => threeEngine.setReducedMotion(reducedMotion.matches);
@@ -46,13 +51,23 @@ export default function ThreeCanvas({ world, activity, activeSessionId, selected
     };
   }, []);
 
-  // Single initial sync: this effect also runs on mount, after the mount
-  // effect above, so no explicit syncWorld call is needed there. Every
-  // world change reconciles exactly once.
+  // Initial snapshot and hidden updates represent current truth, not arrivals.
   useEffect(() => {
     if (!threeEngine.isMounted()) return;
-    threeEngine.syncWorld(world);
-  }, [world]);
+    const engineGeneration = threeEngine.getMountGeneration();
+    const decision = decideWorldSync(
+      streamHydrated,
+      hydratedEngineGeneration.current === engineGeneration,
+      active,
+    );
+    if (decision.kind === "wait") {
+      threeEngine.setPaused(true);
+      return;
+    }
+    threeEngine.syncWorld(world, { animateEntrances: decision.animateEntrances });
+    hydratedEngineGeneration.current = engineGeneration;
+    threeEngine.setPaused(!active);
+  }, [world, active, streamHydrated]);
 
   useEffect(() => {
     if (!threeEngine.isMounted()) return;
@@ -72,13 +87,17 @@ export default function ThreeCanvas({ world, activity, activeSessionId, selected
   return (
     <div
       onClick={(event) => {
+        if (!active) return;
         const actorId = threeEngine.pickAgent(event.clientX, event.clientY);
         if (actorId) onAgentClick(actorId);
       }}
-      onPointerMove={(event) => setIdentifiedActorId(threeEngine.pickAgent(event.clientX, event.clientY))}
+      onPointerMove={(event) => {
+        if (active) setIdentifiedActorId(threeEngine.pickAgent(event.clientX, event.clientY));
+      }}
       onPointerLeave={() => setIdentifiedActorId(null)}
       onFocus={() => setIdentifiedActorId((current) => current ?? selectableActorIds[0] ?? null)}
       onKeyDown={(event) => {
+        if (!active) return;
         if (selectableActorIds.length === 0) return;
         const currentIndex = Math.max(0, selectableActorIds.indexOf(identifiedActorId ?? ""));
         if (event.key === "ArrowRight" || event.key === "ArrowDown") {
@@ -92,7 +111,8 @@ export default function ThreeCanvas({ world, activity, activeSessionId, selected
           onAgentClick(identifiedActorId);
         }
       }}
-      tabIndex={0}
+      tabIndex={active ? 0 : -1}
+      aria-hidden={!active}
       aria-label="3D office agents. Use arrow keys to inspect agents and Enter to select."
       className="absolute inset-0"
       style={{ zIndex: 10, width: '100%', height: '100%', touchAction: 'none' }}
@@ -100,11 +120,11 @@ export default function ThreeCanvas({ world, activity, activeSessionId, selected
       <div ref={containerRef} className="absolute inset-0" />
       {identifiedActor && (
         <div
-          className="pointer-events-none absolute left-3 top-3 z-[1] rounded border border-white/20 bg-slate-950/85 px-3 py-2 text-xs text-white"
+          className="pointer-events-none absolute left-3 top-3 z-[1] rounded-[4px] border border-[var(--strong-border)] bg-[color-mix(in_srgb,var(--canvas)_88%,transparent)] px-3 py-2 text-xs text-[var(--text)] shadow-[2px_2px_0_var(--surface)]"
           aria-live="polite"
         >
           <div className="font-semibold">{identifiedActor.actor.displayName}</div>
-          <div className="text-slate-300">
+          <div className="text-[var(--muted)]">
             {identifiedActor.actor.agentKey} / {identifiedActor.pose} / {identifiedActor.activeWorkCount} active
           </div>
         </div>

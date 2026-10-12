@@ -91,7 +91,7 @@ The dedicated discovery and housekeeping checkpoint is `50a3faf`, `feat: add rea
 
 The read-only Session Inspector is implemented and verified. OpenCode 1.18.35 source and runtime inspection established that the scoped legacy API contains history absent from the newer projection. The confirmed provider uses `serve --pure`. Legacy reads can initialize provider-managed location or cache metadata, so the slice does not claim zero filesystem writes or an atomic snapshot.
 
-The Inspector remains separate from the discovery checkpoint. Its current changes are uncommitted. Prompting, execution, interruption, terminal attachment, other providers, and renderer migration remain outside this slice.
+The Inspector checkpoint is `ff9948a`, `feat: add read-only session inspector`, containing 19 intentional files. Existing renderer and art changes remain unstaged. Prompting, execution, interruption, terminal attachment, other providers, and renderer migration remain outside this checkpoint.
 
 - [x] Ground legacy history and pure-mode behavior in pinned source and a bounded real-provider probe.
 - [x] Compare two Inspector designs, choose inline Settings, and adopt encrypted nonce-bound continuations and disposable history.
@@ -198,4 +198,37 @@ The main agent owns `decisions.tsv`, the three Phase 0 verification scripts, fin
 
 Use `npm test`, `npm test -- --maxWorkers=2`, `npx tsc --noEmit`, `npm run lint`, and `npm run build` with recorded results. Use a loopback server isolated from user port 3001 for browser proof. Preserve user changes and compare the scoped diff with the baseline before any later commit. The owner authorized the Phase 0 checkpoint and subsequently requested a dedicated discovery and housekeeping checkpoint. No PR is requested. Review staged scope before committing.
 
-Phase 0, read-only discovery, and Session Inspector are verified, including normal-process activation. Discovery is checkpointed separately. Inspector changes remain uncommitted. Do not add prompting or terminal control implicitly.
+Phase 0, read-only discovery, and Session Inspector are verified and checkpointed separately, including normal-process activation. The owner now requests Session History Hardening followed by one explicit same-session prompt execution. Ingestion recovery is the first blocking gate. No provider prompt has been sent by this new run.
+
+## Current ingest-auth incident and next authorized work
+
+- [x] Checkpoint Session Inspector at `ff9948a` after reviewing exactly 19 staged files, existing evidence, 104 focused tests, and scoped comment audit. Preserve unrelated renderer work.
+- [x] Reproduce credential rejection without valid ingest payloads. Stored monitor keys yield state200 and malformed ingest400. Inherited and former Windows User token yield 401. Monitor sequence/floor/actor counts remain zero.
+- [x] Align Windows User `PIXEL_MONITOR_TOKEN` privately with the existing monitor token. Verify readback and independent discovery/provider credentials. Preserve server authentication, private environment file, external plugin, and owner processes.
+- [x] Verify recovered store, authenticated SSE, and normal browser display after owner restarts and credential alignment. Read-only checks observe sequence92, one active floor, 13 stored actors and 12 visible non-system actors with SSE LIVE. Existing telemetry is present; exact sender identity and every producer's continued liveness remain unproved. Diagnostic agent still inherits a rejected token.
+- [ ] Rotate pending discovery credentials with independent owner secret and live provider alignment. Do not rotate monitor token again to address this stale-producer incident.
+- [x] Investigate pinned bounded history APIs. Individual-message GET still returns all parts; no part paging or supported byte-range contract. Current matched sample accepts six of ten fixed5 pages versus ten of ten fixed1 latest pages, plus 66 validated older transitions.
+- [ ] Implement and verify single-message pagination with unchanged caps, or separately designed header-only overflow omission. Preserve explicit failure on unreadable messages and reject old-limit cursors.
+- [ ] Design the first write-capable boundary after ingestion and history gates. Require explicit submit, native-session/workspace permissions, no shell endpoint, safe cancellation, concurrency guards, and real provider event provenance. Stop after one verified prompt continues the selected existing session.
+
+Auth diagnostics and alignment proof are under `Temp/opencode/ingest-auth/`. Read-only protocol research is under `Temp/opencode/history-hardening/`. The exact sender of earlier rejected POSTs is not independently identified; the credential mismatch and installed plugin's initialization-time token capture are established. Saved research is not a shipped history fix.
+
+Owner explicitly paused execution after credential alignment. Resume by refreshing the actual producer's launching environment, reopening its plugin-hosting OpenCode process, and proving real accepted events and visible floors/actors. Keep port 3001 protected. Auth helpers, incident documentation, and current trail edits remain on disk uncommitted. Inspector is durable at `ff9948a`. No discovery credential rotation, history-hardening implementation, or provider prompt occurred after this checkpoint.
+
+Owner subsequently restarted the provider, session, and monitor, but reported continued ingest401. Fresh audit still finds the diagnostic parent process's inherited token stale while Windows User and stored monitor tokens authenticate. Reloading the saved value inside a child shell makes that child's inherited token authenticate. The CMD launch recipe in README runs refresh and `opencode.cmd --continue` within the same PowerShell child. This proves the environment-refresh mechanism, not live recovery of the original failing sender. Real event recovery remains the blocking gate.
+
+The 2026-10-12 follow-up observes accepted telemetry in the store and verifies its authenticated stream and actual rendered browser state. Aggregate proof is `Temp/opencode/ingest-auth/live-recovery/results.json`. The current-display gate is closed without valid ingest probes or fabricated activity. This supersedes the earlier zero-event blocker, not the lack of original sender attribution. Credential rotation, history-hardening implementation and Prompt Control remain pending.
+
+## Windows-to-Mac delivery
+
+The owner explicitly requests all current reviewed changes committed and pushed, including previously preserved renderer, theme, source layers, generated assets, generators, tests, and auth-recovery helpers. Delivery targets `origin/fix/3d-colony-v1`, not a merge into the older default `master`. Private environment, new verification artifacts, and native provider data stay outside Git.
+
+- [x] Inspect status, remote and branch. Origin is the public `raigrc/pixel-office-monitor` repository. Review seven unpushed commits and current changes.
+- [x] Complete read-only delivery secret audit across current tracked/untracked files and seven commit trees. No confirmed secret exposure found. Existing owner screenshots remain in their already-committed history.
+- [x] Add Mac setup and private-dependency handoff to README. Include Python/Pillow setup for sprite tests and fresh device credentials.
+- [x] Create and verify separate ignored private ZIP containing 631 configuration/plugin/skill/auth/asset files. Native SQLite is excluded.
+- [ ] Complete native-history backup. The approximately 8 GB database snapshot lacks completed integrity validation; a second duplicate would exceed available disk budget. Preserve Windows source and unverified snapshot. Step 7 is partial until history backup is verified or the owner explicitly excludes history.
+- [x] Run fresh isolated delivery gates. Both suites pass 555 tests in 53 files; build and TypeScript pass; lint has zero errors and 20 existing warnings; helper self-tests pass. Verify 22 deterministic RGBA atlases with 96 frames each. Exclude ignored `Temp/` and Python virtual environments from TypeScript after private backup copies exposed the broad compiler include.
+- [ ] Review final staged source/assets, commit, push, and verify remote tip.
+
+Private backup and its manifest are under `Temp/opencode/mac-migration/`. Delivery secret/gate evidence is under `Temp/opencode/github-delivery/`. Existing history hardening, credential rotation and first Prompt Control execution remain unfinished product work.

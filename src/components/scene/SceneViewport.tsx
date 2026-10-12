@@ -5,6 +5,7 @@ import dynamic from "next/dynamic";
 import { OFFICE_DIMENSIONS } from "@/lib/scene/office-layout";
 import type { WorldState } from "@/lib/world/world-types";
 import type { ActivityModel } from "@/lib/activity/activity-model";
+import { toggleSceneView, type SceneViewState } from "@/lib/scene/scene-lifecycle";
 
 /** Current camera zoom — lets scene children size HUD text in screen px. */
 export const CameraZoomContext = createContext(1);
@@ -18,6 +19,7 @@ interface SceneViewportProps {
   activeSessionId: string | null;
   selectedActorId: string | null;
   onAgentClick: (actorId: string) => void;
+  streamHydrated: boolean;
   sidebarOpen?: boolean;
 }
 
@@ -25,14 +27,14 @@ const ThreeCanvas = dynamic(() => import("./ThreeCanvas"), { ssr: false });
 
 /**
  * SceneViewport — static whole-room camera with optional 3D view.
- * Fits the entire 384×384 office into the container (no pan, no zoom),
+ * Fits the entire 512×384 office into the container (no pan, no zoom),
  * centers it, and bleeds the office floor texture underneath so no
  * letterbox color ever shows.
  */
-export default function SceneViewport({ children, className, world, activity, activeSessionId, selectedActorId, onAgentClick, sidebarOpen = true }: SceneViewportProps) {
+export default function SceneViewport({ children, className, world, activity, activeSessionId, selectedActorId, onAgentClick, streamHydrated, sidebarOpen = true }: SceneViewportProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [view, setView] = useState({ scale: 1, x: 0, y: 0 });
-  const [viewMode, setViewMode] = useState<"2d" | "3d">("2d");
+  const [sceneView, setSceneView] = useState<SceneViewState>({ mode: "2d", hasMounted3D: false });
 
   useEffect(() => {
     const el = containerRef.current;
@@ -59,7 +61,7 @@ export default function SceneViewport({ children, className, world, activity, ac
   }, [sidebarOpen]);
 
   const toggleViewMode = () => {
-    setViewMode((prev) => (prev === "2d" ? "3d" : "2d"));
+    setSceneView(toggleSceneView);
   };
 
   return (
@@ -67,18 +69,19 @@ export default function SceneViewport({ children, className, world, activity, ac
       ref={containerRef}
       className={`relative overflow-hidden ${className ?? ""}`}
       style={{ height: "100%", width: "100%" }}
-      role="img"
+      role="region"
       aria-label="Office scene viewport"
+      data-scene-view={sceneView.mode}
     >
-      {/* Dark framing separates finite office walls from unused viewport space. */}
+      {/* Warm charcoal pixel framing separates room from unused viewport space. */}
       <div
         aria-hidden="true"
         className="absolute inset-0"
         style={{
-          backgroundColor: "#0B1220",
+          backgroundColor: "var(--canvas)",
           backgroundImage: [
-            "linear-gradient(rgba(71, 85, 105, 0.12) 1px, transparent 1px)",
-            "linear-gradient(90deg, rgba(71, 85, 105, 0.12) 1px, transparent 1px)",
+            "linear-gradient(color-mix(in srgb, var(--border) 24%, transparent) 1px, transparent 1px)",
+            "linear-gradient(90deg, color-mix(in srgb, var(--border) 24%, transparent) 1px, transparent 1px)",
           ].join(", "),
           backgroundRepeat: "repeat",
           backgroundSize: "16px 16px",
@@ -90,12 +93,14 @@ export default function SceneViewport({ children, className, world, activity, ac
         <div
           data-office-frame="2d"
           data-office-scale={view.scale}
+          inert={sceneView.mode !== "2d"}
+          aria-hidden={sceneView.mode !== "2d"}
           style={{
             transform: `translate(${view.x}px, ${view.y}px) scale(${view.scale})`,
             transformOrigin: "0 0",
             willChange: "transform",
-            opacity: viewMode === "2d" ? 1 : 0,
-            pointerEvents: viewMode === "2d" ? "auto" : "none",
+            opacity: sceneView.mode === "2d" ? 1 : 0,
+            pointerEvents: sceneView.mode === "2d" ? "auto" : "none",
             transition: "transform var(--dur-ui) var(--ease-in-out), opacity var(--dur-ui) var(--ease-out)",
           }}
         >
@@ -103,29 +108,43 @@ export default function SceneViewport({ children, className, world, activity, ac
         </div>
       </CameraZoomContext.Provider>
 
-      {/* 3D Canvas. ThreeCanvas alone owns the engine lifecycle. */}
-      {viewMode === "3d" && (
-        <Suspense fallback={<div className="absolute inset-0 flex items-center justify-center text-white">Loading 3D...</div>}>
-          <ThreeCanvas world={world} activity={activity} activeSessionId={activeSessionId} selectedActorId={selectedActorId} onAgentClick={onAgentClick} />
-        </Suspense>
+      {sceneView.hasMounted3D && (
+        <div
+          className="absolute inset-0"
+          inert={sceneView.mode !== "3d"}
+          aria-hidden={sceneView.mode !== "3d"}
+          style={{
+            visibility: sceneView.mode === "3d" ? "visible" : "hidden",
+            pointerEvents: sceneView.mode === "3d" ? "auto" : "none",
+          }}
+        >
+          <Suspense fallback={<div className="absolute inset-0 flex items-center justify-center bg-[var(--canvas)] text-[var(--text)]">Loading 3D...</div>}>
+            <ThreeCanvas
+              world={world}
+              activity={activity}
+              activeSessionId={activeSessionId}
+              selectedActorId={selectedActorId}
+              onAgentClick={onAgentClick}
+              active={sceneView.mode === "3d"}
+              streamHydrated={streamHydrated}
+            />
+          </Suspense>
+        </div>
       )}
 
-      {/* View Mode Toggle Button */}
-      {/* Fixed above page chrome: main carries z-[1], so an absolute
-          button buries under header, sidebar, and sheets. */}
+      {/* Fixed above page chrome: main carries z-[1]. */}
       <button
+        type="button"
         onClick={toggleViewMode}
-        className="fixed right-3 z-[60] px-3 py-1.5 rounded-lg text-xs font-medium transition-all duration-200"
+        className="fixed right-3 z-[60] inline-flex min-h-11 min-w-11 cursor-pointer items-center justify-center rounded-[4px] border-2 border-[var(--strong-border)] bg-[var(--surface)] px-3 text-[10px] font-bold tracking-wider text-[var(--text)] transition-colors hover:bg-[var(--raised)] focus-visible:ring-2 focus-visible:ring-[var(--selection)]"
         style={{
           top: "4.25rem",
-          background: "rgba(0, 0, 0, 0.6)",
-          color: "#fff",
-          border: "1px solid rgba(255, 255, 255, 0.2)",
-          backdropFilter: "blur(4px)",
+          fontFamily: "var(--font-pixel), monospace",
+          boxShadow: "2px 2px 0 var(--canvas)",
         }}
-        aria-label={`Switch to ${viewMode === "2d" ? "3D" : "2D"} view`}
+        aria-label={`Switch to ${sceneView.mode === "2d" ? "3D" : "2D"} view`}
       >
-        {viewMode === "2d" ? "3D" : "2D"}
+        {sceneView.mode === "2d" ? "3D" : "2D"}
       </button>
     </div>
   );

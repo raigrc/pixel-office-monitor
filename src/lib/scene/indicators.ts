@@ -1,7 +1,9 @@
 import * as THREE from 'three';
+import { COZY_THEME } from '../cozy-theme';
 
 export const MAX_AGENT_CAP = 320;
 export const BADGE_SIZE = 0.42;
+export const BADGE_INSTANCE_BOUNDS_PADDING = 0.5;
 
 export type BadgeType = 'none' | 'blocked' | 'working' | 'waiting' | 'celebrating' | 'spawn' | 'leave';
 
@@ -14,6 +16,15 @@ const BADGE_SDFS: Record<BadgeType, string> = {
   spawn: '▼',
   leave: '▲',
 };
+
+export const BADGE_SEMANTIC_COLORS = {
+  blocked: COZY_THEME.semantic.error,
+  working: COZY_THEME.semantic.working,
+  waiting: COZY_THEME.semantic.waiting,
+  celebrating: COZY_THEME.semantic.success,
+  spawn: COZY_THEME.semantic.selection,
+  leave: COZY_THEME.semantic.delegationActive,
+} satisfies Record<Exclude<BadgeType, 'none'>, string>;
 
 function createBadgeAtlas(): THREE.CanvasTexture {
   const glyphSize = 64;
@@ -39,12 +50,12 @@ function createBadgeAtlas(): THREE.CanvasTexture {
     if (type === 'none') return;
 
     ctx.beginPath();
-    ctx.fillStyle = '#ffffff';
+    ctx.fillStyle = COZY_THEME.ui.text;
     ctx.arc(x + size / 2, y + size / 2, size * 0.48, 0, Math.PI * 2);
     ctx.fill();
 
     ctx.font = `bold ${size * 0.62}px monospace`;
-    ctx.fillStyle = '#080b12';
+    ctx.fillStyle = COZY_THEME.ui.canvas;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.fillText(BADGE_SDFS[type], x + size / 2, y + size / 2);
@@ -91,6 +102,12 @@ export const BADGE_VERTEX_SHADER = `
 
 const BADGE_FRAGMENT_SHADER = `
   uniform sampler2D badgeAtlas;
+  uniform vec3 uBlockedColor;
+  uniform vec3 uWorkingColor;
+  uniform vec3 uWaitingColor;
+  uniform vec3 uSuccessColor;
+  uniform vec3 uSelectionColor;
+  uniform vec3 uDelegationColor;
   varying float vBadge;
   varying vec3 vColor;
   varying vec2 vUv;
@@ -107,12 +124,12 @@ const BADGE_FRAGMENT_SHADER = `
     if (tex.a < 0.1) discard;
 
     vec3 color = vColor;
-    if (badgeIndex == 1) color = vec3(1.0, 0.2, 0.2);      // blocked - red
-    else if (badgeIndex == 2) color = vec3(1.0, 0.8, 0.2);  // working - amber
-    else if (badgeIndex == 3) color = vec3(0.2, 0.8, 1.0);  // waiting - cyan
-    else if (badgeIndex == 4) color = vec3(0.2, 1.0, 0.4);  // celebrating - green
-    else if (badgeIndex == 5) color = vec3(0.4, 0.6, 1.0);  // spawn - blue
-    else if (badgeIndex == 6) color = vec3(0.8, 0.4, 1.0);  // leave - purple
+    if (badgeIndex == 1) color = uBlockedColor;
+    else if (badgeIndex == 2) color = uWorkingColor;
+    else if (badgeIndex == 3) color = uWaitingColor;
+    else if (badgeIndex == 4) color = uSuccessColor;
+    else if (badgeIndex == 5) color = uSelectionColor;
+    else if (badgeIndex == 6) color = uDelegationColor;
 
     gl_FragColor = vec4(mix(vec3(0.02), color, tex.r), tex.a);
     #include <tonemapping_fragment>
@@ -143,6 +160,12 @@ export class Badges {
       uniforms: {
         badgeAtlas: { value: this.atlas },
         uBadgeSize: { value: BADGE_SIZE },
+        uBlockedColor: { value: new THREE.Color(BADGE_SEMANTIC_COLORS.blocked) },
+        uWorkingColor: { value: new THREE.Color(BADGE_SEMANTIC_COLORS.working) },
+        uWaitingColor: { value: new THREE.Color(BADGE_SEMANTIC_COLORS.waiting) },
+        uSuccessColor: { value: new THREE.Color(BADGE_SEMANTIC_COLORS.celebrating) },
+        uSelectionColor: { value: new THREE.Color(BADGE_SEMANTIC_COLORS.spawn) },
+        uDelegationColor: { value: new THREE.Color(BADGE_SEMANTIC_COLORS.leave) },
       },
       transparent: true,
       depthWrite: false,
@@ -168,7 +191,12 @@ export class Badges {
     return mesh;
   }
 
-  setBadge(agentId: string, type: BadgeType, position: THREE.Vector3, color: THREE.Color = new THREE.Color(0xffffff)): void {
+  setBadge(
+    agentId: string,
+    type: BadgeType,
+    position: THREE.Vector3,
+    color: THREE.Color = new THREE.Color(COZY_THEME.ui.text),
+  ): void {
     let entry = this.agentBadges.get(agentId);
     const badgeIndex = this.badgeTypeToIndex(type);
 
@@ -189,14 +217,25 @@ export class Badges {
 
   /** Faces every badge at the camera. Call once per frame after setBadge. */
   updateView(quaternion: THREE.Quaternion): void {
+    const bounds = new THREE.Box3();
     for (const entry of this.agentBadges.values()) {
       this.dummy.position.copy(entry.pos);
       this.dummy.quaternion.copy(quaternion);
       this.dummy.scale.setScalar(1);
       this.dummy.updateMatrix();
       this.mesh.setMatrixAt(entry.index, this.dummy.matrix);
+      bounds.expandByPoint(entry.pos);
     }
     this.mesh.instanceMatrix.needsUpdate = true;
+    const sphere = this.mesh.boundingSphere ?? new THREE.Sphere();
+    if (bounds.isEmpty()) {
+      sphere.center.set(0, 0, 0);
+      sphere.radius = 0;
+    } else {
+      bounds.getBoundingSphere(sphere);
+      sphere.radius += BADGE_INSTANCE_BOUNDS_PADDING;
+    }
+    this.mesh.boundingSphere = sphere;
   }
 
   private writeInstance(entry: { index: number; type: BadgeType }, badgeIndex: number, color: THREE.Color): void {

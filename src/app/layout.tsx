@@ -1,5 +1,7 @@
 import type { Metadata } from "next";
+import type { CSSProperties } from "react";
 import { Press_Start_2P, VT323, Inter } from "next/font/google";
+import { COZY_CSS_VARIABLES } from "@/lib/cozy-theme";
 import "./globals.css";
 
 const pressStart = Press_Start_2P({
@@ -24,16 +26,19 @@ const inter = Inter({
 
 export const metadata: Metadata = {
   title: "Pixel Office Monitor",
-  description: "Real-time OpenCode agent office — pixel art OLED monitor",
+  description: "Real-time OpenCode automation studio monitor",
 };
+
+const cozyThemeStyle: CSSProperties & typeof COZY_CSS_VARIABLES = COZY_CSS_VARIABLES;
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
     <html
       lang="en"
       className={`${pressStart.variable} ${vt323.variable} ${inter.variable} h-full antialiased dark`}
+      style={cozyThemeStyle}
     >
-      <body className="min-h-full flex flex-col bg-[#D8C8A7] text-[#F1F5F9]">
+      <body className="flex min-h-full flex-col bg-[var(--canvas)] text-[var(--text)]">
         <div className="flex flex-1 flex-col">{children}</div>
       </body>
     </html>

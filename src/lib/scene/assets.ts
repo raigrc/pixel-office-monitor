@@ -1,3 +1,5 @@
+import characterSpriteManifest from "../../../public/sprites/characters/manifest.json";
+
 export interface AssetMeta {
   path: string;
   width: number;
@@ -7,6 +9,15 @@ export interface AssetMeta {
   frameHeight?: number;
   anchor?: { x: number; y: number };
 }
+
+interface CharacterSpriteManifest {
+  fallbackKey: string;
+  characters: Record<string, AssetMeta & { sha256: string }>;
+}
+
+const CHARACTER_SPRITES: CharacterSpriteManifest = characterSpriteManifest;
+
+export const CHARACTER_SPRITE_KEYS = Object.keys(CHARACTER_SPRITES.characters);
 
 export interface AssetManifest {
   tiles: Record<string, AssetMeta>;
@@ -24,7 +35,7 @@ export const ASSET_MANIFEST: AssetManifest = {
     "wall-west": { path: "/sprites/office/wall-west.png", width: 16, height: 16 },
     "door-closed": { path: "/sprites/office/door-closed.png", width: 16, height: 32 },
     "door-open": { path: "/sprites/office/door-open.png", width: 16, height: 32 },
-    "window": { path: "/sprites/office/window.png", width: 32, height: 32 },
+    "window": { path: "/sprites/office/window.png", width: 32, height: 24 },
     "partition": { path: "/sprites/office/partition.png", width: 16, height: 32 },
   },
   furniture: {
@@ -35,43 +46,22 @@ export const ASSET_MANIFEST: AssetManifest = {
     "monitor-screen": { path: "/sprites/office/monitor-screen-on.png", width: 16, height: 8 },
     "monitor-screen-working": { path: "/sprites/office/monitor-screen-working.png", width: 16, height: 8 },
     "monitor-screen-off": { path: "/sprites/office/monitor-screen-off.png", width: 16, height: 8 },
-    "storage": { path: "/sprites/office/storage.png", width: 32, height: 64 },
+    "storage": { path: "/sprites/office/storage.png", width: 48, height: 64 },
     "plant": { path: "/sprites/office/plant.png", width: 16, height: 24 },
     "lamp": { path: "/sprites/office/lamp.png", width: 8, height: 16 },
-    "whiteboard": { path: "/sprites/office/whiteboard.png", width: 48, height: 32 },
+    "whiteboard": { path: "/sprites/office/whiteboard.png", width: 48, height: 24 },
+    "corkboard": { path: "/sprites/office/corkboard.png", width: 48, height: 32 },
+    "wall-shelf": { path: "/sprites/office/wall-shelf.png", width: 48, height: 16 },
     "coffee-machine": { path: "/sprites/office/coffee-machine.png", width: 16, height: 24 },
-    "meeting-table": { path: "/sprites/office/meeting-table.png", width: 64, height: 48 },
-    "meeting-chair": { path: "/sprites/office/meeting-chair.png", width: 16, height: 16 },
+    "coffee-counter": { path: "/sprites/office/coffee-counter.png", width: 48, height: 24 },
+    "sofa": { path: "/sprites/office/sofa.png", width: 48, height: 32 },
+    "meeting-table": { path: "/sprites/office/meeting-table.png", width: 40, height: 24 },
+    "meeting-chair": { path: "/sprites/office/meeting-chair.png", width: 12, height: 12 },
+    "credenza": { path: "/sprites/office/credenza.png", width: 64, height: 24 },
+    "lounge-table": { path: "/sprites/office/lounge-table.png", width: 32, height: 24 },
+    "conference-table": { path: "/sprites/office/conference-table.png", width: 56, height: 40 },
   },
-  characters: {
-    "orchestrator": {
-      path: "/sprites/characters/orchestrator.png",
-      width: 768,
-      height: 128,
-      frames: 96,
-      frameWidth: 32,
-      frameHeight: 32,
-      anchor: { x: 16, y: 30 },
-    },
-    "senior-engineer": {
-      path: "/sprites/characters/senior-engineer.png",
-      width: 768,
-      height: 128,
-      frames: 96,
-      frameWidth: 32,
-      frameHeight: 32,
-      anchor: { x: 16, y: 30 },
-    },
-    "fallback": {
-      path: "/sprites/characters/fallback.png",
-      width: 768,
-      height: 128,
-      frames: 96,
-      frameWidth: 32,
-      frameHeight: 32,
-      anchor: { x: 16, y: 30 },
-    },
-  },
+  characters: CHARACTER_SPRITES.characters,
   props: {
     "task-folder": { path: "/sprites/office/task-folder.png", width: 8, height: 8 },
     "task-folder-open": { path: "/sprites/office/task-folder-open.png", width: 12, height: 8 },
@@ -90,8 +80,8 @@ export function getAssetUrl(category: keyof AssetManifest, key: string): string 
 }
 
 export function getCharacterMeta(agentKey: string): AssetMeta {
-  const normalized = agentKey.toLowerCase().replace(/[^a-z0-9-]/g, "-");
+  const normalized = agentKey.trim().toLowerCase().replace(/[^a-z0-9-]+/g, "-").replace(/^-+|-+$/g, "");
   const meta = ASSET_MANIFEST.characters[normalized];
   if (meta) return meta;
-  return ASSET_MANIFEST.characters.fallback;
+  return ASSET_MANIFEST.characters[CHARACTER_SPRITES.fallbackKey];
 }

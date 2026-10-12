@@ -5,8 +5,8 @@ import { parseEnv } from 'node:util';
 import { createHash } from 'node:crypto';
 
 const label = process.argv[2] ?? 'final';
-if (!['baseline', 'final', 'discovery', 'history'].includes(label)) throw new Error('Use baseline, final, discovery or history');
-const output = ['discovery', 'history'].includes(label) ? path.resolve(`Temp/opencode/${label}/gates`) : path.resolve('Temp/opencode/phase0', label);
+if (!['baseline', 'final', 'discovery', 'history', 'delivery'].includes(label)) throw new Error('Use baseline, final, discovery, history or delivery');
+const output = label === 'delivery' ? path.resolve('Temp/opencode/github-delivery/gates') : ['discovery', 'history'].includes(label) ? path.resolve(`Temp/opencode/${label}/gates`) : path.resolve('Temp/opencode/phase0', label);
 const localEnv = existsSync('.env.local') ? parseEnv(readFileSync('.env.local', 'utf8')) : {};
 mkdirSync(output, { recursive: true });
 const isolatedConfig = path.resolve('Temp/opencode/verification.tsconfig.json');
@@ -27,6 +27,8 @@ const checks = [
   ['typescript', 'npx tsc --noEmit'],
   ['log-self-test', 'node scripts/audit-logs.mjs --self-test'],
   ['rotation-self-test', 'node scripts/rotate-monitor-token.mjs --self-test'],
+  ['auth-audit-self-test', 'node scripts/audit-monitor-connection.mjs --self-test'],
+  ['auth-alignment-self-test', 'node scripts/align-monitor-producer.mjs --self-test'],
 ];
 const selected = process.argv.slice(3);
 assertCheckNames(selected);

@@ -39,6 +39,9 @@ export default function AgentInspector({ cubicle, onClose, showPromptPreview, re
   const prompt = cubicle.prompt;
   const lastTool = cubicle.lastTool;
   const todos = cubicle.todos ?? [];
+  const character = getCharacterMeta(agentKey);
+  const portraitSize = 48;
+  const portraitScale = portraitSize / (character.frameWidth ?? character.width);
 
   const displayPrompt = !prompt || !showPromptPreview
     ? null
@@ -49,18 +52,18 @@ export default function AgentInspector({ cubicle, onClose, showPromptPreview, re
   const statusColor = (() => {
     switch (status) {
       case "working":
-        return "#3B82F6";
+        return "var(--working)";
       case "thinking":
-        return "#F97316";
+        return "var(--waiting)";
       case "delegating":
-        return "#F97316";
+        return "var(--delegation-active)";
       case "celebrating":
-        return "#22C55E";
+        return "var(--success)";
       case "blocked":
-        return "#EF4444";
+        return "var(--error)";
       case "idle":
       default:
-        return "#64748B";
+        return "var(--idle)";
     }
   })();
 
@@ -85,7 +88,7 @@ export default function AgentInspector({ cubicle, onClose, showPromptPreview, re
   return (
     <AnimatePresence>
       <motion.div
-        className="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
+        className="fixed inset-0 z-50 flex items-center justify-center bg-[color-mix(in_srgb,var(--canvas)_78%,transparent)] p-3"
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         exit={{ opacity: 0 }}
@@ -95,7 +98,7 @@ export default function AgentInspector({ cubicle, onClose, showPromptPreview, re
         aria-labelledby="inspector-title"
       >
         <motion.div
-          className="relative w-full max-w-md bg-[#0F172A] border border-[#334155] rounded-xl p-6 shadow-2xl"
+          className="relative w-full max-w-md rounded-[6px] border-2 border-[var(--strong-border)] bg-[var(--canvas)] p-5 shadow-[6px_6px_0_var(--surface)]"
           initial={{ opacity: 0, y: 20, scale: 0.95 }}
           animate={{ opacity: 1, y: 0, scale: 1 }}
           exit={{ opacity: 0, y: -20, scale: 0.95 }}
@@ -104,23 +107,29 @@ export default function AgentInspector({ cubicle, onClose, showPromptPreview, re
         >
           <div className="flex items-start justify-between mb-4">
             <div className="flex items-center gap-3">
-              <Image
-                src={getCharacterMeta(agentKey).path}
-                alt=""
-                width={48}
-                height={48}
-                className="rounded"
-                style={{ imageRendering: "pixelated" }}
-              />
+              <span className="relative block h-12 w-12 shrink-0 overflow-hidden rounded-[3px] border-2 border-[var(--border)] bg-[var(--surface)]" aria-hidden="true">
+                <Image
+                  src={character.path}
+                  alt=""
+                  width={character.width}
+                  height={character.height}
+                  unoptimized
+                  className="pixel-img max-w-none"
+                  style={{
+                    width: character.width * portraitScale,
+                    height: character.height * portraitScale,
+                  }}
+                />
+              </span>
               <div>
-                <h2 id="inspector-title" className="text-xl font-bold text-[#F1F5F9]" style={{ fontFamily: "var(--font-vt), VT323, monospace" }}>
+                <h2 id="inspector-title" className="text-xl font-bold text-[var(--text)]" style={{ fontFamily: "var(--font-vt), VT323, monospace" }}>
                   {agentKey}
                 </h2>
                 <span
-                  className="inline-flex items-center px-2 py-0.5 rounded text-xs font-bold text-white mt-1"
+                  className="mt-1 inline-flex items-center rounded-[3px] px-2 py-0.5 text-xs font-bold text-[var(--canvas)]"
                   style={{ backgroundColor: statusColor }}
                 >
-                  <span className="w-2 h-2 rounded-full bg-current mr-1.5 animate-pulse" aria-hidden="true" />
+                  <span className="mr-1.5 h-2 w-2 rounded-full bg-current" aria-hidden="true" />
                   {statusLabel}
                 </span>
               </div>
@@ -128,7 +137,7 @@ export default function AgentInspector({ cubicle, onClose, showPromptPreview, re
             <button
               ref={closeRef}
               onClick={onClose}
-              className="p-1 text-[#64748B] hover:text-[#F1F5F9] transition-colors"
+              className="flex h-11 w-11 cursor-pointer items-center justify-center rounded-[4px] text-[var(--muted)] transition-colors hover:bg-[var(--raised)] hover:text-[var(--text)]"
               aria-label="Close inspector"
             >
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -140,38 +149,38 @@ export default function AgentInspector({ cubicle, onClose, showPromptPreview, re
 
           <div className="space-y-4">
             {cubicle.taskCategory && (
-              <div className="bg-[#1E293B] border border-[#334155] rounded p-3">
-                <div className="text-xs text-[#64748B] mb-1">TASK TYPE</div>
-                <div className="text-sm uppercase text-[#F1F5F9] font-mono">{cubicle.taskCategory}</div>
+              <div className="border-l-2 border-[var(--border)] bg-[var(--surface)] p-3">
+                <div className="mb-1 text-xs text-[var(--muted)]">TASK TYPE</div>
+                <div className="font-mono text-sm uppercase text-[var(--text)]">{cubicle.taskCategory}</div>
               </div>
             )}
             {lastTool && (
-              <div className="bg-[#1E293B] border border-[#334155] rounded p-3">
-                <div className="text-xs text-[#64748B] mb-1">LAST TOOL</div>
-                <div className="text-sm text-[#F1F5F9] font-mono">{lastTool}</div>
+              <div className="border-l-2 border-[var(--border)] bg-[var(--surface)] p-3">
+                <div className="mb-1 text-xs text-[var(--muted)]">LAST TOOL</div>
+                <div className="font-mono text-sm text-[var(--text)]">{lastTool}</div>
               </div>
             )}
 
             {displayPrompt && (
-              <div className="bg-[#1E293B] border border-[#334155] rounded p-3">
-                <div className="text-xs text-[#64748B] mb-1">CURRENT TASK</div>
-                <div className="text-sm text-[#F1F5F9] whitespace-pre-wrap break-all">{displayPrompt}</div>
+              <div className="border-l-2 border-[var(--working)] bg-[var(--surface)] p-3">
+                <div className="mb-1 text-xs text-[var(--muted)]">CURRENT TASK</div>
+                <div className="whitespace-pre-wrap break-all text-sm text-[var(--text)]">{displayPrompt}</div>
               </div>
             )}
 
             {todos.length > 0 && (
-              <div className="bg-[#1E293B] border border-[#334155] rounded p-3">
-                <div className="text-xs text-[#64748B] mb-2">TODO LIST</div>
+              <div className="border-l-2 border-[var(--border)] bg-[var(--surface)] p-3">
+                <div className="mb-2 text-xs text-[var(--muted)]">TODO LIST</div>
                 <ul className="space-y-1">
                   {todos.map((todo, i) => (
                     <li key={i} className="flex items-start gap-2 text-sm">
                       <span
-                        className="w-4 h-4 mt-0.5 flex-shrink-0 rounded border border-[#334155] bg-[#0F172A]"
+                        className="mt-0.5 h-4 w-4 flex-shrink-0 rounded-[2px] border border-[var(--border)] bg-[var(--canvas)]"
                         style={{
-                          backgroundColor: todo.status === "completed" || todo.state === "completed" ? "#22C55E" : "transparent",
+                          backgroundColor: todo.status === "completed" || todo.state === "completed" ? "var(--success)" : "transparent",
                         }}
                       />
-                      <span className="text-[#F1F5F9] break-all">
+                      <span className="break-all text-[var(--text)]">
                         {String(todo.content ?? todo.text ?? JSON.stringify(todo))}
                       </span>
                     </li>
@@ -181,16 +190,16 @@ export default function AgentInspector({ cubicle, onClose, showPromptPreview, re
             )}
 
             {!displayPrompt && todos.length === 0 && !lastTool && (
-              <div className="text-center text-[#64748B] py-4 text-sm">
+              <div className="py-4 text-center text-sm text-[var(--muted)]">
                 No active task details available
               </div>
             )}
           </div>
 
-          <div className="mt-6 pt-4 border-t border-[#334155] flex justify-end">
+          <div className="mt-6 flex justify-end border-t border-[var(--border)] pt-4">
             <button
               onClick={onClose}
-              className="px-4 py-2 bg-[#3B82F6] text-white rounded hover:bg-[#2563EB] transition-colors font-medium text-sm"
+              className="min-h-11 cursor-pointer rounded-[4px] border-2 border-[var(--selection)] bg-[var(--raised)] px-4 text-sm font-medium text-[var(--text)] transition-colors hover:bg-[var(--elevated)]"
             >
               Close
             </button>

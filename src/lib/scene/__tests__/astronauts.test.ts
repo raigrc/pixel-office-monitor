@@ -34,7 +34,13 @@ vi.stubGlobal('document', {
 });
 
 import { createCrewRig, CrewRig, getClipFrame, getBoneMatrix } from '../crew-rig';
-import { createAstronauts, Astronauts, AstronautState } from '../astronauts';
+import {
+  ASTRONAUT_INSTANCE_BOUNDS_PADDING,
+  createAstronauts,
+  Astronauts,
+  AstronautState,
+} from '../astronauts';
+import { COZY_THEME } from '../../cozy-theme';
 
 describe('Crew Rig', () => {
   let rig: CrewRig;
@@ -199,6 +205,27 @@ describe('Astronauts', () => {
       uSunDirection: new THREE.Vector3(0, 1, 0),
       uSunIntensity: 1.5,
     });
+  });
+
+  it('uses warm opaque supporting materials and disables shader bob under reduced motion', () => {
+    const meshes = astronauts.getMeshes();
+    const helmet = meshes[1].material as THREE.MeshStandardMaterial;
+    const visor = meshes[2].material as THREE.MeshStandardMaterial;
+    const lamp = meshes[5].material as THREE.MeshStandardMaterial;
+    const body = meshes[0].material as THREE.ShaderMaterial;
+
+    expect(helmet.color.getHex()).toBe(new THREE.Color(COZY_THEME.environment.floor).getHex());
+    expect(helmet.metalness).toBe(COZY_THEME.materials.paintedMetal.metalness);
+    expect(visor.transparent).toBe(false);
+    expect(lamp.emissive.getHex()).toBe(new THREE.Color(COZY_THEME.environment.lamp).getHex());
+
+    astronauts.setReducedMotion(true);
+    expect(body.uniforms.uIdleMotion.value).toBe(0);
+    astronauts.setUniforms({ uTime: 42 });
+    expect(body.uniforms.uTime.value).toBe(42);
+    expect(body.uniforms.uIdleMotion.value).toBe(0);
+    astronauts.setReducedMotion(false);
+    expect(body.uniforms.uIdleMotion.value).toBe(1);
   });
 });
 
@@ -376,6 +403,28 @@ describe('Astronauts compaction (1.1D)', () => {
     const detailColor = new THREE.Color();
     crew.getAccessoryMeshes().sensor.getColorAt(1, detailColor);
     expect(detailColor.getHex()).toBe(0xffffff);
+    crew.dispose();
+  });
+
+  it('shares exact batch bounds across moving body and accessory instances', () => {
+    const crew = createAstronauts({ maxAgents: 2, rig });
+    const distant = makeAgent('distant', 42, 0xffffff, 0);
+    const farther = makeAgent('farther', -170, 0xffffff, 0);
+    const meshes = crew.getMeshes();
+    const computeSpies = meshes.map((mesh) => vi.spyOn(mesh, 'computeBoundingSphere'));
+
+    crew.addAgent(distant);
+    crew.addAgent(farther);
+    crew.refreshBounds();
+
+    for (const mesh of meshes) {
+      expect(mesh.frustumCulled).toBe(true);
+      expect(mesh.boundingSphere).not.toBeNull();
+      expect(mesh.boundingSphere!.radius).toBeGreaterThan(ASTRONAUT_INSTANCE_BOUNDS_PADDING);
+      expect(mesh.boundingSphere!.containsPoint(distant.position)).toBe(true);
+      expect(mesh.boundingSphere!.containsPoint(farther.position)).toBe(true);
+    }
+    for (const spy of computeSpies) expect(spy).not.toHaveBeenCalled();
     crew.dispose();
   });
 });

@@ -14,3 +14,22 @@ export function deriveTimeOfDayFromDate(date: Date): number {
 export function normalizeTimeOfDay(t: number): number {
   return ((t % 24) + 24) % 24;
 }
+
+export type TimeStage = "day" | "dusk" | "night";
+
+export const DAY_START = 7;
+export const DAY_END = 17;
+export const DUSK_MORNING_START = 5;
+export const DUSK_EVENING_END = 20;
+
+export function stageForTimeOfDay(timeOfDay: number): TimeStage {
+  const normalized = normalizeTimeOfDay(timeOfDay);
+  if (normalized >= DUSK_MORNING_START && normalized < DAY_START) return "dusk";
+  if (normalized >= DAY_START && normalized < DAY_END) return "day";
+  if (normalized >= DAY_END && normalized < DUSK_EVENING_END) return "dusk";
+  return "night";
+}
+
+export function deriveTimeStageFromDate(date: Date): TimeStage {
+  return stageForTimeOfDay(deriveTimeOfDayFromDate(date));
+}

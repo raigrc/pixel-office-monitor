@@ -140,10 +140,21 @@ export class AgentMotionController {
       if (runtime) {
         runtime.agent = agent;
         if (runtime.phase === 'leaving') {
-          runtime.phase = 'entering';
-          runtime.leg = 'site';
-          runtime.waitSeconds = 0;
-          this.route(runtime, site, environment);
+          if (animateEntrances) {
+            runtime.phase = 'entering';
+            runtime.leg = 'site';
+            runtime.waitSeconds = 0;
+            this.route(runtime, site, environment);
+          } else {
+            runtime.phase = 'onsite';
+            runtime.leg = 'site';
+            runtime.position.copy(site);
+            runtime.destination.copy(site);
+            runtime.waypoints = [];
+            runtime.waypointIndex = 0;
+            runtime.waitSeconds = 0;
+            runtime.missingSeconds = 0;
+          }
         } else if (runtime.phase === 'standby') {
           runtime.phase = 'onsite';
           runtime.missingSeconds = 0;
@@ -190,10 +201,11 @@ export class AgentMotionController {
 
     for (const [id, runtime] of this.agents) {
       if (desired.has(id)) continue;
-      if (runtime.phase === 'leaving' || runtime.phase === 'standby') continue;
+      if (runtime.phase === 'leaving') continue;
       const worldClosed = options.activeWorldIds && !options.activeWorldIds.has(runtime.agent.worldId);
-      if (worldClosed) this.beginDeparture(id, runtime, environment, removedIds, events);
-      else {
+      if (worldClosed) {
+        this.beginDeparture(id, runtime, environment, removedIds, events);
+      } else if (runtime.phase !== 'standby') {
         runtime.phase = 'standby';
         runtime.missingSeconds = 0;
         runtime.waypoints = [];
