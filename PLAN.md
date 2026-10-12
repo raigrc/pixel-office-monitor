@@ -229,6 +229,8 @@ The owner explicitly requests all current reviewed changes committed and pushed,
 - [x] Create and verify separate ignored private ZIP containing 631 configuration/plugin/skill/auth/asset files. Native SQLite is excluded.
 - [ ] Complete native-history backup. The approximately 8 GB database snapshot lacks completed integrity validation; a second duplicate would exceed available disk budget. Preserve Windows source and unverified snapshot. Step 7 is partial until history backup is verified or the owner explicitly excludes history.
 - [x] Run fresh isolated delivery gates. Both suites pass 555 tests in 53 files; build and TypeScript pass; lint has zero errors and 20 existing warnings; helper self-tests pass. Verify 22 deterministic RGBA atlases with 96 frames each. Exclude ignored `Temp/` and Python virtual environments from TypeScript after private backup copies exposed the broad compiler include.
-- [ ] Review final staged source/assets, commit, push, and verify remote tip.
+- [x] Review 188 staged source/assets files and commit as `e096701`, `Save progress before Mac migration`. Push to `origin/fix/3d-colony-v1`. Git remote and GitHub API both confirm exact commit `e096701a6c7de70bc41854e203c4bc0f1b7d09db`; tracked working tree is clean.
 
 Private backup and its manifest are under `Temp/opencode/mac-migration/`. Delivery secret/gate evidence is under `Temp/opencode/github-delivery/`. Existing history hardening, credential rotation and first Prompt Control execution remain unfinished product work.
+
+Repository transfer is ready from `https://github.com/raigrc/pixel-office-monitor/tree/fix/3d-colony-v1`. Clone that branch and follow README's Mac setup. This completion applies to source/assets and the separate verified configuration archive. It does not close native-history migration or authorize removal of the Windows original.
