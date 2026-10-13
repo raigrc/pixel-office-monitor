@@ -1,13 +1,15 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { deriveTimeStageFromDate, type TimeStage } from "./lighting-time";
 
-export type DayNightPhase = "day" | "night";
+export type DayNightPhase = TimeStage;
 
-/** Day window 06:00–18:00 local. Pure clock, no toggle (per spec). */
+/**
+ * Three-free presentation stage shared with the 3D sky.
+ */
 export function getDayNightPhase(date: Date = new Date()): DayNightPhase {
-  const h = date.getHours();
-  return h >= 6 && h < 18 ? "day" : "night";
+  return deriveTimeStageFromDate(date);
 }
 
 export function isNight(date: Date = new Date()): boolean {

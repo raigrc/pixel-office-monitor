@@ -85,6 +85,39 @@ describe('Navigation', () => {
         expect(isNavWalkable(grid, gx, gz)).toBe(true);
       }
     });
+
+    it('does not cut diagonally between blocked cardinal cells', () => {
+      const grid = createNavGrid();
+      const start = gridToWorld(100, 100);
+      const goal = gridToWorld(101, 101);
+      const east = gridToWorld(101, 100);
+      const south = gridToWorld(100, 101);
+      rasterizeCircle(grid, east.x, east.z, 0.1);
+      rasterizeCircle(grid, south.x, south.z, 0.1);
+
+      const result = findPath(grid, start, goal);
+
+      expect(result.blocked).toBe(false);
+      expect(result.waypoints.length).toBeGreaterThan(2);
+    });
+
+    it('preserves the exact requested destination', () => {
+      const grid = createNavGrid();
+      const start = new THREE.Vector3(-2.13, 0.45, 0.17);
+      const goal = new THREE.Vector3(4.37, 0.45, 1.91);
+
+      const result = findPath(grid, start, goal);
+
+      expect(result.blocked).toBe(false);
+      expect(result.waypoints.at(-1)?.x).toBeCloseTo(goal.x, 5);
+      expect(result.waypoints.at(-1)?.z).toBeCloseTo(goal.z, 5);
+    });
+
+    it('rejects starts and goals outside the navigation extent', () => {
+      const grid = createNavGrid();
+      expect(findPath(grid, new THREE.Vector3(-100, 0, 0), new THREE.Vector3(0, 0, 0)).blocked).toBe(true);
+      expect(findPath(grid, new THREE.Vector3(0, 0, 0), new THREE.Vector3(100, 0, 0)).blocked).toBe(true);
+    });
   });
 
   describe('Nearest free', () => {

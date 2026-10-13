@@ -10,7 +10,6 @@ export * from "./plot-geometry";
 export * from "./terrain";
 export * from "./scatter";
 export * from "./buildings";
-export * from "./building-shader";
 export * from "./crew-rig";
 export * from "./astronauts";
 export * from "./navigation";

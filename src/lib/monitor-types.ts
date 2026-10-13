@@ -20,6 +20,7 @@ export interface FloorInfo {
   createdAt: number;
   updatedAt: number;
   closed: boolean;
+  closedAt: number | null;
   sessionId: string;
   legacyCubicles?: Map<string, CubicleLegacy>;
 }
@@ -50,8 +51,10 @@ export type InvocationStatus =
 export interface InvocationInfo {
   invocationId: string;
   floorId: string;
-  senderActorId: string;
-  recipientActorId: string;
+  /** Producer-supplied endpoint. Null means attribution is unavailable. */
+  senderActorId: string | null;
+  /** Producer-supplied endpoint. Null means attribution is unavailable. */
+  recipientActorId: string | null;
   callId: string;
   parentInvocationId: string | null;
   revision: number;
@@ -59,7 +62,7 @@ export interface InvocationInfo {
   outcome: "succeeded" | "failed" | "cancelled" | "unknown" | null;
   taskCategory: TaskCategory | null;
   promptPreview: string | null;
-  requestedAt: number;
+  requestedAt: number | null;
   startedAt: number | null;
   finishedAt: number | null;
 }
@@ -78,9 +81,10 @@ export type CubicleLegacy = {
   status: "working" | "idle";
   since: number;
   lastTool?: string;
+  taskCategory?: TaskCategory;
   prompt?: string;
   todos?: Array<Record<string, unknown>>;
-  state: "idle" | "working" | "thinking" | "delegating" | "celebrating";
+  state: "idle" | "working" | "thinking" | "delegating" | "celebrating" | "blocked";
   lastStateChange: number;
 };
 

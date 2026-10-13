@@ -30,5 +30,5 @@
     ".next/dev/types/**/*.ts",
     "**/*.mts"
   ],
-  "exclude": ["node_modules", "src/**/__tests__/**", "tests/**", "vitest.config.*"]
+  "exclude": ["node_modules", "Temp/**", ".venv/**", "src/**/__tests__/**", "tests/**", "vitest.config.*"]
 }

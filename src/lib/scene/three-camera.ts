@@ -1,5 +1,8 @@
 import * as THREE from 'three';
 
+export const THREE_CAMERA_NEAR = 0.1;
+export const MIN_CAMERA_DISTANCE = 5;
+
 export interface CameraState {
   azimuth: number;
   polar: number;
@@ -18,15 +21,21 @@ export class ThreeCamera {
     target: new THREE.Vector3(0, 0, 0),
   };
 
-  private targetState: CameraState = { ...this.state };
+  private targetState: CameraState = { ...this.state, target: this.state.target.clone() };
   private isDragging = false;
   private dragType: 'pan' | 'orbit' | null = null;
   private lastPointer = new THREE.Vector2();
-  private dragStartState: CameraState | null = null;
+  private pinnedGround: THREE.Vector3 | null = null;
+  private activePointers = new Map<number, THREE.Vector2>();
+  private pinchDistance: number | null = null;
   private lastInteractionTime = 0;
   private idleTimer: number | null = null;
+  private idleAnimation: number | null = null;
+  private reducedMotion = false;
+  private paused = false;
+  private userInteracted = false;
 
-  private readonly MIN_DISTANCE = 5;
+  private readonly MIN_DISTANCE = MIN_CAMERA_DISTANCE;
   private readonly MAX_DISTANCE = 80;
   private readonly MIN_POLAR = 0.15;
   private readonly MAX_POLAR = Math.PI / 2 - 0.05;
@@ -43,28 +52,48 @@ export class ThreeCamera {
 
   private attachListeners(): void {
     this.domElement.addEventListener('pointerdown', this.onPointerDown);
+    this.domElement.addEventListener('pointermove', this.onPointerMove);
+    this.domElement.addEventListener('pointerup', this.onPointerUp);
+    this.domElement.addEventListener('pointercancel', this.onPointerUp);
+    this.domElement.addEventListener('lostpointercapture', this.onPointerUp);
     this.domElement.addEventListener('wheel', this.onWheel, { passive: false });
-    this.domElement.addEventListener('contextmenu', (e) => e.preventDefault());
-    window.addEventListener('pointermove', this.onPointerMove);
-    window.addEventListener('pointerup', this.onPointerUp);
-
-    this.handleTouch = this.handleTouch.bind(this);
-    this.domElement.addEventListener('touchstart', this.handleTouch, { passive: false });
-    this.domElement.addEventListener('touchmove', this.handleTouch, { passive: false });
-    this.domElement.addEventListener('touchend', this.handleTouch);
+    this.domElement.addEventListener('contextmenu', this.onContextMenu);
+    window.addEventListener('blur', this.cancelGesture);
   }
 
   private detachListeners(): void {
     this.domElement.removeEventListener('pointerdown', this.onPointerDown);
+    this.domElement.removeEventListener('pointermove', this.onPointerMove);
+    this.domElement.removeEventListener('pointerup', this.onPointerUp);
+    this.domElement.removeEventListener('pointercancel', this.onPointerUp);
+    this.domElement.removeEventListener('lostpointercapture', this.onPointerUp);
     this.domElement.removeEventListener('wheel', this.onWheel);
-    window.removeEventListener('pointermove', this.onPointerMove);
-    window.removeEventListener('pointerup', this.onPointerUp);
-    this.domElement.removeEventListener('touchstart', this.handleTouch);
-    this.domElement.removeEventListener('touchmove', this.handleTouch);
-    this.domElement.removeEventListener('touchend', this.handleTouch);
+    this.domElement.removeEventListener('contextmenu', this.onContextMenu);
+    window.removeEventListener('blur', this.cancelGesture);
   }
 
+  private onContextMenu = (event: Event): void => {
+    if (!this.paused) event.preventDefault();
+  };
+
   private onPointerDown = (event: PointerEvent): void => {
+    if (this.paused) return;
+    this.userInteracted = true;
+    try {
+      this.domElement.setPointerCapture(event.pointerId);
+    } catch {
+      // Synthetic test events may not have capturable pointers.
+    }
+    this.activePointers.set(event.pointerId, new THREE.Vector2(event.clientX, event.clientY));
+    if (this.activePointers.size === 2) {
+      const [a, b] = [...this.activePointers.values()];
+      this.pinchDistance = a.distanceTo(b);
+      this.isDragging = false;
+      this.dragType = null;
+      this.pinnedGround = null;
+      this.resetIdleTimer();
+      return;
+    }
     if (event.button === 0 && !event.shiftKey && !event.ctrlKey) {
       this.dragType = 'pan';
     } else if (event.button === 2 || event.button === 0 && (event.shiftKey || event.ctrlKey)) {
@@ -76,24 +105,39 @@ export class ThreeCamera {
 
     this.isDragging = true;
     this.lastPointer.set(event.clientX, event.clientY);
-    this.dragStartState = { ...this.state, target: this.state.target.clone() };
+    this.pinnedGround = this.dragType === 'pan'
+      ? this.groundPointAt(event.clientX, event.clientY)
+      : null;
     this.resetIdleTimer();
-    try {
-      this.domElement.setPointerCapture(event.pointerId);
-    } catch {
-      // Synthesized events carry no capturable pointer. Drag still tracks.
-    }
   };
 
   private onPointerMove = (event: PointerEvent): void => {
-    if (!this.isDragging || !this.dragStartState) return;
+    if (this.paused) return;
+    if (this.activePointers.has(event.pointerId)) {
+      this.activePointers.set(event.pointerId, new THREE.Vector2(event.clientX, event.clientY));
+    }
+    if (this.activePointers.size === 2) {
+      const [a, b] = [...this.activePointers.values()];
+      const distance = a.distanceTo(b);
+      if (this.pinchDistance && distance > 0) {
+        this.zoom(
+          this.pinchDistance / distance,
+          (a.x + b.x) / 2,
+          (a.y + b.y) / 2,
+        );
+      }
+      this.pinchDistance = distance;
+      this.resetIdleTimer();
+      return;
+    }
+    if (!this.isDragging) return;
 
     const dx = event.clientX - this.lastPointer.x;
     const dy = event.clientY - this.lastPointer.y;
     this.lastPointer.set(event.clientX, event.clientY);
 
     if (this.dragType === 'pan') {
-      this.pan(dx, dy);
+      this.pan(event.clientX, event.clientY);
     } else if (this.dragType === 'orbit') {
       this.orbit(dx, dy);
     }
@@ -102,10 +146,20 @@ export class ThreeCamera {
   };
 
   private onPointerUp = (event: PointerEvent): void => {
-    if (!this.isDragging) return;
-    this.isDragging = false;
-    this.dragType = null;
-    this.dragStartState = null;
+    if (this.paused) return;
+    this.activePointers.delete(event.pointerId);
+    this.pinchDistance = null;
+    if (this.activePointers.size === 1) {
+      const [point] = this.activePointers.values();
+      this.isDragging = true;
+      this.dragType = 'pan';
+      this.lastPointer.copy(point);
+      this.pinnedGround = this.groundPointAt(point.x, point.y);
+    } else {
+      this.isDragging = false;
+      this.dragType = null;
+      this.pinnedGround = null;
+    }
     try {
       if (this.domElement.hasPointerCapture?.(event.pointerId)) {
         this.domElement.releasePointerCapture(event.pointerId);
@@ -117,116 +171,84 @@ export class ThreeCamera {
   };
 
   private onWheel = (event: WheelEvent): void => {
+    if (this.paused) return;
     event.preventDefault();
+    this.userInteracted = true;
     const delta = event.deltaY > 0 ? 1.1 : 1 / 1.1;
     this.zoom(delta, event.clientX, event.clientY);
     this.resetIdleTimer();
   };
 
-  private handleTouch(event: TouchEvent): void {
-    if (event.touches.length === 1) {
-      const touch = event.touches[0];
-      const simulatedEvent = new PointerEvent('pointermove', {
-        clientX: touch.clientX,
-        clientY: touch.clientY,
-      });
-      if (event.type === 'touchstart') {
-        this.onPointerDown(new PointerEvent('pointerdown', {
-          clientX: touch.clientX,
-          clientY: touch.clientY,
-          button: 0,
-        }));
-      } else if (event.type === 'touchmove') {
-        this.onPointerMove(simulatedEvent);
-      } else {
-        this.onPointerUp(new PointerEvent('pointerup', {
-          clientX: touch.clientX,
-          clientY: touch.clientY,
-        }));
-      }
-    } else if (event.touches.length === 2) {
-      event.preventDefault();
-      const touch1 = event.touches[0];
-      const touch2 = event.touches[1];
-      const dist = Math.hypot(touch1.clientX - touch2.clientX, touch1.clientY - touch2.clientY);
-      if (this.lastTouchDist !== null) {
-        const delta = dist / this.lastTouchDist;
-        this.zoom(1 / delta, (touch1.clientX + touch2.clientX) / 2, (touch1.clientY + touch2.clientY) / 2);
-      }
-      this.lastTouchDist = dist;
-      this.resetIdleTimer();
-    } else {
-      this.lastTouchDist = null;
-    }
+  private cancelGesture = (): void => {
+    this.isDragging = false;
+    this.dragType = null;
+    this.pinnedGround = null;
+    this.activePointers.clear();
+    this.pinchDistance = null;
+  };
+
+  private groundPointAt(clientX: number, clientY: number): THREE.Vector3 | null {
+    const rect = this.domElement.getBoundingClientRect();
+    if (rect.width < 1 || rect.height < 1) return null;
+    this.camera.updateMatrixWorld();
+    const ray = new THREE.Raycaster();
+    ray.setFromCamera(new THREE.Vector2(
+      ((clientX - rect.left) / rect.width) * 2 - 1,
+      -((clientY - rect.top) / rect.height) * 2 + 1,
+    ), this.camera);
+    return ray.ray.intersectPlane(
+      new THREE.Plane(new THREE.Vector3(0, 1, 0), 0),
+      new THREE.Vector3(),
+    );
   }
 
-  private lastTouchDist: number | null = null;
-
-  private pan(dx: number, dy: number): void {
-    if (!this.dragStartState) return;
-
-    const distance = this.state.distance;
-    const panSpeed = distance * 0.0015;
-
-    const forward = new THREE.Vector3();
-    this.camera.getWorldDirection(forward);
-    forward.y = 0;
-    forward.normalize();
-
-    const right = new THREE.Vector3();
-    right.crossVectors(forward, new THREE.Vector3(0, 1, 0)).normalize();
-
-    const up = new THREE.Vector3(0, 1, 0);
-
-    this.targetState.target.addScaledVector(right, -dx * panSpeed);
-    this.targetState.target.addScaledVector(up, dy * panSpeed);
-    this.targetState.target.addScaledVector(forward, -dy * panSpeed * 0.3);
+  private pan(clientX: number, clientY: number): void {
+    if (!this.pinnedGround) return;
+    const current = this.groundPointAt(clientX, clientY);
+    if (!current) return;
+    this.targetState.target.add(this.pinnedGround.clone().sub(current));
+    this.targetState.target.y = 0;
   }
 
   private orbit(dx: number, dy: number): void {
-    if (!this.dragStartState) return;
-
-    this.targetState.azimuth = this.dragStartState.azimuth - dx * 0.005;
+    this.targetState.azimuth -= dx * 0.005;
     this.targetState.polar = THREE.MathUtils.clamp(
-      this.dragStartState.polar + dy * 0.005,
+      this.targetState.polar + dy * 0.005,
       this.MIN_POLAR,
       this.MAX_POLAR
     );
   }
 
   private zoom(delta: number, clientX: number, clientY: number): void {
-    const rect = this.domElement.getBoundingClientRect();
-    const ndcX = ((clientX - rect.left) / rect.width) * 2 - 1;
-    const ndcY = -((clientY - rect.top) / rect.height) * 2 + 1;
-
-    const ray = new THREE.Raycaster();
-    ray.setFromCamera(new THREE.Vector2(ndcX, ndcY), this.camera);
-
-    const groundPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
-    const intersectPoint = new THREE.Vector3();
-    ray.ray.intersectPlane(groundPlane, intersectPoint);
+    const intersectPoint = this.groundPointAt(clientX, clientY);
 
     const newDistance = THREE.MathUtils.clamp(
-      this.state.distance * delta,
+      this.targetState.distance * delta,
       this.MIN_DISTANCE,
       this.MAX_DISTANCE
     );
 
-    if (intersectPoint.x !== 0 || intersectPoint.z !== 0) {
-      const toTarget = new THREE.Vector3().subVectors(this.state.target, intersectPoint);
-      const currentDist = this.state.distance;
-      toTarget.multiplyScalar(1 - newDistance / currentDist);
-      this.targetState.target.add(toTarget);
+    if (intersectPoint) {
+      const towardPointer = intersectPoint.clone().sub(this.targetState.target);
+      towardPointer.multiplyScalar(1 - newDistance / this.targetState.distance);
+      this.targetState.target.add(towardPointer);
+      this.targetState.target.y = 0;
     }
 
     this.targetState.distance = newDistance;
   }
 
   private resetIdleTimer(): void {
+    if (this.paused) return;
     this.lastInteractionTime = performance.now();
     if (this.idleTimer !== null) {
       clearTimeout(this.idleTimer);
     }
+    if (this.idleAnimation !== null) {
+      cancelAnimationFrame(this.idleAnimation);
+      this.idleAnimation = null;
+    }
+    if (this.reducedMotion) return;
     this.idleTimer = window.setTimeout(() => this.startIdleEase(), this.IDLE_DELAY);
   }
 
@@ -242,10 +264,11 @@ export class ThreeCamera {
       if (Math.abs(azimuthDiff) > 0.001 || Math.abs(polarDiff) > 0.001) {
         this.targetState.azimuth -= azimuthDiff * 0.02;
         this.targetState.polar -= polarDiff * 0.02;
-        requestAnimationFrame(easeToRest);
+        this.idleAnimation = requestAnimationFrame(easeToRest);
       } else {
         this.targetState.azimuth = this.getNearestRestAzimuth();
         this.targetState.polar = this.REST_POLAR;
+        this.idleAnimation = null;
       }
     };
     easeToRest();
@@ -253,7 +276,7 @@ export class ThreeCamera {
 
   private getNearestRestAzimuth(): number {
     const steps = Math.PI * 2 / this.REST_AZIMUTH_STEP;
-    const currentStep = Math.round(this.state.azimuth / this.REST_AZIMUTH_STEP);
+    const currentStep = Math.round(this.targetState.azimuth / this.REST_AZIMUTH_STEP);
     return (currentStep % steps) * this.REST_AZIMUTH_STEP;
   }
 
@@ -264,6 +287,10 @@ export class ThreeCamera {
   }
 
   update(dt: number): void {
+    if (this.reducedMotion) {
+      this.applyTargetImmediately();
+      return;
+    }
     const lerpFactor = 1 - Math.exp(-dt * 8);
 
     this.state.azimuth = THREE.MathUtils.lerp(this.state.azimuth, this.targetState.azimuth, lerpFactor);
@@ -290,7 +317,38 @@ export class ThreeCamera {
     if (distance !== undefined) {
       this.targetState.distance = THREE.MathUtils.clamp(distance, this.MIN_DISTANCE, this.MAX_DISTANCE);
     }
+    if (this.reducedMotion) this.applyTargetImmediately();
     this.resetIdleTimer();
+  }
+
+  setReducedMotion(enabled: boolean): void {
+    this.reducedMotion = enabled;
+    if (enabled) {
+      if (this.idleTimer !== null) clearTimeout(this.idleTimer);
+      if (this.idleAnimation !== null) cancelAnimationFrame(this.idleAnimation);
+      this.idleTimer = null;
+      this.idleAnimation = null;
+      this.applyTargetImmediately();
+    }
+  }
+
+  setPaused(paused: boolean): void {
+    if (this.paused === paused) return;
+    this.paused = paused;
+    if (!paused) return;
+    this.cancelGesture();
+    if (this.idleTimer !== null) clearTimeout(this.idleTimer);
+    if (this.idleAnimation !== null) cancelAnimationFrame(this.idleAnimation);
+    this.idleTimer = null;
+    this.idleAnimation = null;
+  }
+
+  private applyTargetImmediately(): void {
+    this.state.azimuth = this.targetState.azimuth;
+    this.state.polar = this.targetState.polar;
+    this.state.distance = this.targetState.distance;
+    this.state.target.copy(this.targetState.target);
+    this.updateCamera();
   }
 
   getState(): CameraState {
@@ -302,6 +360,7 @@ export class ThreeCamera {
     if (state.polar !== undefined) this.targetState.polar = THREE.MathUtils.clamp(state.polar, this.MIN_POLAR, this.MAX_POLAR);
     if (state.distance !== undefined) this.targetState.distance = THREE.MathUtils.clamp(state.distance, this.MIN_DISTANCE, this.MAX_DISTANCE);
     if (state.target !== undefined) this.targetState.target.copy(state.target);
+    if (this.reducedMotion) this.applyTargetImmediately();
     this.resetIdleTimer();
   }
 
@@ -310,5 +369,13 @@ export class ThreeCamera {
     if (this.idleTimer !== null) {
       clearTimeout(this.idleTimer);
     }
+    if (this.idleAnimation !== null) {
+      cancelAnimationFrame(this.idleAnimation);
+    }
+    this.cancelGesture();
+  }
+
+  hasUserInteracted(): boolean {
+    return this.userInteracted;
   }
 }

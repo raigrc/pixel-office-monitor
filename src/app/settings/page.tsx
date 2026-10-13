@@ -3,6 +3,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import OpenCodeDiscoveryPanel from "@/components/OpenCodeDiscoveryPanel";
 
 const LS_KEYS = {
   showPromptPreview: "pixel:showPromptPreview",
@@ -50,17 +51,17 @@ function ToggleRow({
   id: string;
 }) {
   return (
-    <div className="flex items-center justify-between gap-4 rounded-[6px] border bg-[#0B1220] px-4 py-3.5" style={{ borderColor: "#334155" }}>
+    <div className="flex items-center justify-between gap-4 rounded-[4px] border border-[var(--border)] bg-[var(--surface)] px-4 py-3.5">
       <div className="min-w-0 flex-1">
         <div
-          className="text-[14px] tracking-wide text-[#F1F5F9]"
+          className="text-[14px] tracking-wide text-[var(--text)]"
           style={{ fontFamily: "var(--font-vt), VT323, monospace", fontSize: "16px" }}
         >
           {label}
         </div>
         {desc && (
           <div
-            className="mt-0.5 text-xs leading-relaxed text-[#94A3B8]"
+            className="mt-0.5 text-xs leading-relaxed text-[var(--muted)]"
             style={{ fontFamily: "var(--font-inter), Inter, sans-serif" }}
           >
             {desc}
@@ -75,15 +76,15 @@ function ToggleRow({
         aria-label={label}
         onClick={() => onChange(!checked)}
         className={[
-          "relative inline-flex h-6 w-11 shrink-0 cursor-pointer items-center rounded-full border-2 transition-colors duration-200",
-          "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#3B82F6] focus-visible:ring-offset-2 focus-visible:ring-offset-[#0F172A]",
-          checked ? "bg-[#22C55E] border-[#22C55E]" : "bg-[#1E293B] border-[#334155]",
+          "relative inline-flex h-11 w-12 shrink-0 cursor-pointer items-center rounded-[4px] border-2 transition-colors duration-200",
+          "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--selection)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--canvas)]",
+          checked ? "border-[var(--working)] bg-[var(--working)]" : "border-[var(--strong-border)] bg-[var(--raised)]",
         ].join(" ")}
       >
         <span
           className={[
-            "inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform duration-200",
-            checked ? "translate-x-5" : "translate-x-1",
+            "inline-block h-5 w-5 transform rounded-[2px] bg-[var(--canvas)] transition-transform duration-200",
+            checked ? "translate-x-6" : "translate-x-1",
           ].join(" ")}
         />
       </button>
@@ -118,31 +119,32 @@ export default function SettingsPage() {
       <div className="flex items-center justify-between gap-4">
         <div>
           <h1
-            className="text-[18px] tracking-[0.08em] text-[#F1F5F9]"
+             className="text-[18px] tracking-[0.08em] text-[var(--text)]"
             style={{ fontFamily: "var(--font-pixel), monospace", fontSize: "14px", lineHeight: "16px" }}
           >
             SETTINGS
           </h1>
           <p
-            className="mt-1 text-sm text-[#94A3B8]"
+            className="mt-1 text-sm text-[var(--muted)]"
             style={{ fontFamily: "var(--font-inter), Inter, sans-serif" }}
           >
-            OLED • Pixel Office Monitor — local only, stored in localStorage.
+            Display preferences stay in localStorage. OpenCode discovery uses a separate read-only server connection.
           </p>
         </div>
         <Link
           href="/"
-          className="inline-flex items-center rounded-md border bg-[#1E293B] px-3 py-2 text-xs font-medium text-[#F1F5F9] transition-colors duration-200 hover:bg-[#24324D] hover:border-[#475569] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#3B82F6] focus-visible:ring-offset-2 focus-visible:ring-offset-[#0F172A]"
-          style={{ borderColor: "#334155", fontFamily: "var(--font-inter), Inter, sans-serif" }}
+          className="inline-flex min-h-11 items-center gap-2 rounded-[4px] border border-[var(--border)] bg-[var(--surface)] px-3 text-xs font-medium text-[var(--text)] transition-colors duration-200 hover:border-[var(--strong-border)] hover:bg-[var(--raised)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--selection)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--canvas)]"
+          style={{ fontFamily: "var(--font-inter), Inter, sans-serif" }}
         >
-          ← Back to Office
+          <svg aria-hidden="true" className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="m15 18-6-6 6-6" /></svg>
+          Back to Office
         </Link>
       </div>
 
       {!hydrated ? (
         <div className="grid gap-3">
           {Array.from({ length: 3 }).map((_, i) => (
-            <div key={i} className="h-[72px] animate-pulse rounded-[6px] border-2 bg-[#1E293B]" style={{ borderColor: "#334155" }} />
+            <div key={i} className="h-[72px] animate-pulse rounded-[4px] border-2 border-[var(--border)] bg-[var(--surface)]" />
           ))}
         </div>
       ) : (
@@ -150,10 +152,10 @@ export default function SettingsPage() {
           {/* Display */}
           <section className="flex flex-col gap-3">
             <h2
-              className="text-[16px] tracking-wide text-[#F1F5F9]"
+              className="text-[16px] tracking-wide text-[var(--text)]"
               style={{ fontFamily: "var(--font-vt), VT323, monospace" }}
             >
-              ▸ display
+              Display
             </h2>
             <ToggleRow
               id="showPromptPreview"
@@ -181,79 +183,82 @@ export default function SettingsPage() {
           {/* Motion */}
           <section className="flex flex-col gap-3">
             <h2
-              className="text-[16px] tracking-wide text-[#F1F5F9]"
+              className="text-[16px] tracking-wide text-[var(--text)]"
               style={{ fontFamily: "var(--font-vt), VT323, monospace" }}
             >
-              ▸ motion & a11y
+              Motion and accessibility
             </h2>
-            <div className="rounded-[6px] border bg-[#1E293B] px-4 py-4" style={{ borderColor: "#334155" }}>
+            <div className="rounded-[4px] border border-[var(--border)] bg-[var(--surface)] px-4 py-4">
               <div className="flex items-center justify-between gap-4">
                 <div>
                   <div
-                    className="text-[16px] text-[#F1F5F9]"
+                    className="text-[16px] text-[var(--text)]"
                     style={{ fontFamily: "var(--font-vt), VT323, monospace" }}
                   >
                     Reduce motion
                   </div>
                   <div
-                    className="text-xs text-[#94A3B8]"
+                    className="text-xs text-[var(--muted)]"
                     style={{ fontFamily: "var(--font-inter), Inter, sans-serif" }}
                   >
-                    Mirrors OS <code className="rounded bg-[#0F172A] px-1 py-0.5 text-[#F1F5F9]">prefers-reduced-motion: reduce</code>. When active, sprite ticks (200ms) and Zzz float (1800ms) freeze. Read-only; change in OS settings.
+                    Mirrors OS <code className="rounded-[2px] bg-[var(--canvas)] px-1 py-0.5 text-[var(--text)]">prefers-reduced-motion: reduce</code>. When active, status motion and transitions stop. Read-only; change in OS settings.
                   </div>
                 </div>
                 <span
                   className={[
-                    "inline-flex items-center rounded-full border px-3 py-1 text-xs font-semibold",
-                    prefersReducedMotion ? "border-[#22C55E]/30 bg-[#22C55E]/10 text-[#22C55E]" : "border-[#334155] bg-[#0B1220] text-[#94A3B8]",
+                    "inline-flex min-h-11 items-center gap-2 rounded-[4px] border px-3 text-xs font-semibold",
+                    prefersReducedMotion ? "border-[var(--success)] bg-[var(--raised)] text-[var(--success)]" : "border-[var(--border)] bg-[var(--canvas)] text-[var(--muted)]",
                   ].join(" ")}
                   style={{ fontFamily: "var(--font-inter), Inter, sans-serif" }}
                 >
-                  {prefersReducedMotion ? "● reduce: on" : "○ reduce: off"}
+                  <span aria-hidden="true" className={`h-2 w-2 rounded-full ${prefersReducedMotion ? "bg-[var(--success)]" : "bg-[var(--idle)]"}`} />
+                  Reduce: {prefersReducedMotion ? "on" : "off"}
                 </span>
               </div>
               <p
-                className="mt-3 text-xs leading-relaxed text-[#64748B]"
+                className="mt-3 text-xs leading-relaxed text-[var(--muted)]"
                 style={{ fontFamily: "var(--font-inter), Inter, sans-serif" }}
               >
-                Sprites honor <code className="text-[#94A3B8]">prefers-reduced-motion</code> automatically; no toggle needed. Settings page just surfaces the current value.
+                Sprites honor <code className="text-[var(--muted)]">prefers-reduced-motion</code> automatically; no toggle needed. Settings page surfaces current value.
               </p>
             </div>
           </section>
 
+          <OpenCodeDiscoveryPanel />
+
           {/* Info */}
-          <section className="rounded-[6px] border-2 bg-[#1E293B] px-4 py-4" style={{ borderColor: "#334155" }}>
+          <section className="rounded-[4px] border-2 border-[var(--border)] bg-[var(--surface)] px-4 py-4">
             <h3
-              className="text-[13px] tracking-widest text-[#94A3B8]"
+              className="text-[13px] tracking-widest text-[var(--muted)]"
               style={{ fontFamily: "var(--font-pixel), monospace", fontSize: "8px" }}
             >
               NOTES
             </h3>
             <ul
-              className="mt-2 list-disc space-y-1 pl-5 text-xs leading-relaxed text-[#64748B]"
+              className="mt-2 list-disc space-y-1 pl-5 text-xs leading-relaxed text-[var(--muted)]"
               style={{ fontFamily: "var(--font-inter), Inter, sans-serif" }}
             >
               <li>
-                <code className="rounded bg-[#0F172A] px-1 py-0.5 text-[#94A3B8]">showPromptPreview=false</code> only trims client display; plugin still POSTs prompt (debounced 300ms, 200-char cap). To fully omit prompt server-side, toggle would need to gate plugin payload — see plugin header note.
+                <code className="rounded-[2px] bg-[var(--canvas)] px-1 py-0.5 text-[var(--muted)]">showPromptPreview=false</code> only trims client display; plugin still POSTs prompt (debounced 300ms, 200-char cap). To fully omit prompt server-side, toggle would need to gate plugin payload — see plugin header note.
               </li>
               <li>
-                <code className="rounded bg-[#0F172A] px-1 py-0.5 text-[#94A3B8]">redactPaths</code> does client-side regex replacement; raw store keeps original for debugging.
+                <code className="rounded-[2px] bg-[var(--canvas)] px-1 py-0.5 text-[var(--muted)]">redactPaths</code> does client-side regex replacement; raw store keeps original for debugging.
               </li>
               <li>
-                CRT overlay is CSS only (<code className="text-[#94A3B8]">.crt::after</code> 6% scanlines). No image cost.
+                CRT overlay is CSS only (<code className="text-[var(--muted)]">.crt::after</code> 6% scanlines). No image cost.
               </li>
               <li>
-                Keys: <code className="text-[#94A3B8]">pixel:showPromptPreview</code>, <code className="text-[#94A3B8]">pixel:redactPaths</code>, <code className="text-[#94A3B8]">pixel:crt</code>. Clear via devtools → Application → Local Storage.
+                Keys: <code className="text-[var(--muted)]">pixel:showPromptPreview</code>, <code className="text-[var(--muted)]">pixel:redactPaths</code>, <code className="text-[var(--muted)]">pixel:crt</code>. Clear via devtools → Application → Local Storage.
               </li>
             </ul>
           </section>
 
           <footer className="pt-2 text-center">
             <p
-              className="text-[11px] tracking-widest text-[#475569]"
+              className="text-[11px] tracking-widest text-[var(--muted)]"
               style={{ fontFamily: "var(--font-inter), Inter, sans-serif" }}
             >
-              OLED #0F172A • VT323 headings • localStorage only — no server write
+              Warm charcoal shell • Local display preferences • Manual OpenCode discovery
             </p>
           </footer>
         </>

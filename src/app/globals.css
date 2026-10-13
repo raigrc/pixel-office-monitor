@@ -1,17 +1,9 @@
 @import "tailwindcss";
 
 :root {
-  --bg: #0f172a;
-  --surface: #1e293b;
-  --raised: #24324d;
-  --border: #334155;
-  --text: #f1f5f9;
-  --muted: #94a3b8;
-  --working: #22c55e;
-  --typing: #3b82f6;
-  --idle: #64748b;
-  --accent: #f97316;
-  --error: #ef4444;
+  --bg: var(--canvas);
+  --typing: var(--selection);
+  --accent: var(--waiting);
   /* Motion tokens (animate skill): strong curves, UI <300ms. */
   --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
   --ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);
@@ -28,6 +20,14 @@
   --color-border: var(--border);
   --color-text: var(--text);
   --color-muted: var(--muted);
+  --color-dim: var(--dim);
+  --color-selection: var(--selection);
+  --color-working: var(--working);
+  --color-error: var(--error);
+  --color-success: var(--success);
+  --color-waiting: var(--waiting);
+  --color-idle: var(--idle);
+  --color-delegation: var(--delegation-active);
   --font-pixel: var(--font-pixel);
   --font-vt: var(--font-vt);
   --font-inter: var(--font-inter);
@@ -63,6 +63,24 @@ body {
   -ms-interpolation-mode: nearest-neighbor;
 }
 
+.office-light-shaft {
+  background: linear-gradient(
+    145deg,
+    color-mix(in srgb, var(--lamp) 72%, var(--text)) 0%,
+    color-mix(in srgb, var(--lamp) 34%, transparent) 58%,
+    transparent 100%
+  );
+  mix-blend-mode: screen;
+}
+
+.office-light-shaft-left {
+  clip-path: polygon(0 0, 24% 0, 100% 100%, 46% 100%);
+}
+
+.office-light-shaft-right {
+  clip-path: polygon(0 0, 24% 0, 92% 100%, 38% 100%);
+}
+
 /* CRT overlay helper — 6% scanline toggle via .crt class on container */
 .crt {
   position: relative;
@@ -76,8 +94,8 @@ body {
     to bottom,
     transparent 0px,
     transparent 2px,
-    rgba(255, 255, 255, 0.06) 2px,
-    rgba(255, 255, 255, 0.06) 3px
+    color-mix(in srgb, var(--text) 6%, transparent) 2px,
+    color-mix(in srgb, var(--text) 6%, transparent) 3px
   );
   opacity: 0.6;
 }
@@ -96,10 +114,10 @@ body {
 @keyframes working-pulse {
   0%,
   100% {
-    box-shadow: 0 0 0 0 rgba(34, 197, 94, 0);
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--working) 0%, transparent);
   }
   50% {
-    box-shadow: 0 0 12px 2px rgba(34, 197, 94, 0.15);
+    box-shadow: 0 0 8px 1px color-mix(in srgb, var(--working) 18%, transparent);
   }
 }
 
@@ -118,11 +136,11 @@ body {
   0%,
   100% {
     opacity: 1;
-    box-shadow: 0 0 6px rgba(34, 197, 94, 0.6);
+    box-shadow: 0 0 4px color-mix(in srgb, var(--working) 55%, transparent);
   }
   50% {
     opacity: 0.7;
-    box-shadow: 0 0 2px rgba(34, 197, 94, 0.3);
+    box-shadow: 0 0 2px color-mix(in srgb, var(--working) 30%, transparent);
   }
 }
 
@@ -180,7 +198,7 @@ body {
     transform: translateY(0) rotate(0deg);
   }
   50% {
-    transform: translateY(-2px) rotate(5deg);
+    transform: translateY(-1px) rotate(3deg);
   }
 }
 
@@ -220,7 +238,7 @@ body {
 }
 
 .animate-prop-sync {
-  animation: prop-sync 400ms ease-in-out infinite;
+  animation: prop-sync 800ms var(--ease-in-out) infinite;
   transform-origin: bottom center;
 }
 
@@ -273,6 +291,10 @@ body {
     animation: none !important;
     opacity: 1 !important;
   }
+  .animate-prop-sync {
+    animation: none !important;
+    transform: none !important;
+  }
   .monitor-working,
   .monitor-spill-working,
   .lamp-glow,
@@ -287,22 +309,21 @@ body {
   }
 }
 
-/* Office floor texture — OLED dark, pixel-art tile pattern, baseboard */
+/* Legacy office-floor helper uses canonical cozy shell tokens. */
 .office-floor {
-  background-color: #0f172a;
+  background-color: var(--canvas);
   background-image: url('/sprites/floor-tile.png');
   background-repeat: repeat;
   background-size: 32px 32px;
   image-rendering: pixelated;
-  /* baseboard inset: 6px #0B1220 + 2px #334155 lip */
   box-shadow:
-    inset 0 -6px 0 #0b1220,
-    inset 0 -8px 0 #334155;
+    inset 0 -6px 0 var(--canvas),
+    inset 0 -8px 0 var(--border);
 }
 
 /* aisle stripe — dashed mid-line for office corridor feel */
 .aisle {
-  border-bottom: 1px dashed rgba(51, 65, 85, 0.4);
+  border-bottom: 1px dashed color-mix(in srgb, var(--border) 40%, transparent);
 }
 
 /* Monitor glow — green pulse for active screens (GPU: opacity/filter only) */
@@ -322,31 +343,6 @@ body {
 /* Working monitor: transform/opacity pulse, off-thread. */
 .monitor-working {
   animation: monitor-glow 1.6s var(--ease-in-out) infinite;
-}
-
-/* Prop float — subtle 2px bob for desk props when agent is working */
-@keyframes prop-float {
-  0%, 100% {
-    transform: translateY(0);
-  }
-  50% {
-    transform: translateY(-2px);
-  }
-}
-
-.animate-prop-float {
-  animation: prop-float 1.5s var(--ease-in-out) infinite;
-}
-
-/* Lamp glow flicker — rare, gentle (night only). */
-@keyframes lamp-flicker {
-  0%, 100% { opacity: 0.9; }
-  45% { opacity: 1; }
-  50% { opacity: 0.92; }
-  55% { opacity: 1; }
-}
-.lamp-glow {
-  animation: lamp-flicker 4s linear infinite;
 }
 
 /* Day-night tint: rare transition, longer allowed (900ms ease-out). */
@@ -370,14 +366,6 @@ body {
 .monitor-spill-working {
   animation: monitor-spill-pulse 1.6s var(--ease-in-out) infinite;
 }
-@keyframes lamp-cone-breathe {
-  0%, 100% { opacity: 0.92; }
-  50% { opacity: 1; }
-}
-.lamp-cone {
-  animation: lamp-cone-breathe 3.2s var(--ease-in-out) infinite;
-}
-
 /* (Roster room: no exit animations — desks are permanent.) */
 
 /* Button press feedback (100-160ms). */
@@ -392,7 +380,7 @@ body {
 
 /* Focus ring visible */
 *:focus-visible {
-  outline: 2px solid var(--typing);
+  outline: 2px solid var(--selection);
   outline-offset: 2px;
 }
 

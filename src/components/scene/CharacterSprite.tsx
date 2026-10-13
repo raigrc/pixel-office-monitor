@@ -3,9 +3,15 @@
 import { useEffect, useRef, useState } from "react";
 import Image from "next/image";
 import { getCharacterMeta } from "@/lib/scene/assets";
-import { Point } from "@/lib/scene/office-layout";
+import {
+  getPosePlaybackPolicy,
+  POSE_FRAMES,
+  type Pose,
+  type PosePlaybackPolicy,
+} from "@/lib/scene/character-animation";
+import type { Point } from "@/lib/scene/office-layout";
 
-export type Pose = "idle" | "walk" | "seat" | "work" | "give" | "receive" | "success" | "error";
+export type { Pose } from "@/lib/scene/character-animation";
 
 interface CharacterSpriteProps {
   actorId: string;
@@ -14,42 +20,15 @@ interface CharacterSpriteProps {
   facing: "up" | "down" | "left" | "right";
   pose: Pose;
   scale?: number;
+  decorative?: boolean;
   onAnimationComplete?: () => void;
 }
 
-const POSE_FRAMES: Record<Pose, { start: number; count: number }> = {
-  idle: { start: 0, count: 4 },
-  walk: { start: 4, count: 8 },
-  seat: { start: 12, count: 2 },
-  work: { start: 14, count: 2 },
-  give: { start: 16, count: 2 },
-  receive: { start: 18, count: 2 },
-  success: { start: 20, count: 2 },
-  error: { start: 22, count: 2 },
-};
-
-const FRAME_DURATION = 125;
 const DIRECTION_ROWS = { down: 0, left: 1, right: 2, up: 3 };
 
-/**
- * Per-frame hold durations (ms). Research consensus: timing beats frame
- * count — uneven holds read as alive, uniform ticks read as mechanical.
- * - idle: slow-breath tempo (kept for contract; idle currently holds frame 0
- *   so the frozen body never fights the Zzz indicator).
- * - work: type-type-type-PAUSE burst rhythm over the 2 typing frames.
- * - walk: even fast strides.
- * - one-shots: snap to the gesture, hold the impact frame, then complete.
- */
-const POSE_DURATIONS: Record<Pose, number[]> = {
-  idle: [450, 450, 450, 450],
-  walk: [62, 62, 62, 62, 62, 62, 62, 62],
-  seat: [1000, 1000],
-  work: [95, 95, 95, 450],
-  give: [70, 180],
-  receive: [70, 180],
-  success: [90, 260],
-  error: [90, 260],
-};
+function firstFrame(policy: PosePlaybackPolicy): number {
+  return policy.kind === "static" ? policy.frame : policy.steps[0].frame;
+}
 
 export default function CharacterSprite({
   actorId,
@@ -57,7 +36,8 @@ export default function CharacterSprite({
   position,
   facing,
   pose,
-  scale = 2,
+  scale = 1,
+  decorative = false,
   onAnimationComplete,
 }: CharacterSpriteProps) {
   const meta = getCharacterMeta(agentKey);
@@ -65,81 +45,78 @@ export default function CharacterSprite({
     pose,
     frame: 0,
   });
-  const lastFrameTimeRef = useRef(0);
-  const animationRef = useRef(0);
+  const onAnimationCompleteRef = useRef(onAnimationComplete);
 
-  const poseData = POSE_FRAMES[pose] ?? POSE_FRAMES.idle;
+  const poseData = POSE_FRAMES[pose];
   const frameWidth = meta.frameWidth ?? meta.width;
   const frameHeight = meta.frameHeight ?? meta.height;
+  const anchor = meta.anchor ?? { x: frameWidth / 2, y: frameHeight };
 
   useEffect(() => {
-    const isLooping = pose === "walk" || pose === "work";
-    const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    onAnimationCompleteRef.current = onAnimationComplete;
+  }, [onAnimationComplete]);
 
-    lastFrameTimeRef.current = performance.now();
+  useEffect(() => {
+    const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
+    let animationFrame = 0;
+    let oneShotCompleted = false;
 
-    if (pose === "idle" || pose === "seat") {
-      // Resting poses hold frame 0 — the Zzz indicator carries idle status,
-      // and any body motion fights it.
-      animationRef.current = requestAnimationFrame(() => {
-        setFrameState((previous) =>
-          previous.pose === pose && previous.frame === 0 ? previous : { pose, frame: 0 }
-        );
-      });
-      if (reducedMotion) onAnimationComplete?.();
-      return () => cancelAnimationFrame(animationRef.current);
-    }
+    const setFrame = (frame: number) => {
+      setFrameState((previous) =>
+        previous.pose === pose && previous.frame === frame ? previous : { pose, frame }
+      );
+    };
 
-    if (reducedMotion) {
-      onAnimationComplete?.();
-      return;
-    }
+    const completeOneShot = () => {
+      if (oneShotCompleted) return;
+      oneShotCompleted = true;
+      onAnimationCompleteRef.current?.();
+    };
 
-    const durations = POSE_DURATIONS[pose] ?? [FRAME_DURATION];
+    const startPlayback = () => {
+      cancelAnimationFrame(animationFrame);
+      const policy = getPosePlaybackPolicy(pose, reducedMotion.matches);
 
-    if (isLooping) {
-      let step = 0;
-      const animateFrames = () => {
-        const now = performance.now();
-        if (now - lastFrameTimeRef.current >= durations[step % durations.length]) {
-          step += 1;
-          setFrameState({ pose, frame: step % poseData.count });
-          lastFrameTimeRef.current = performance.now();
-        }
-        animationRef.current = requestAnimationFrame(animateFrames);
-      };
-      animationRef.current = requestAnimationFrame(animateFrames);
-      return () => cancelAnimationFrame(animationRef.current);
-    } else {
-      // One-shot: visibly step through frames with per-frame holds, then land
-      // on the final frame and complete. (Previously only a timer ran — the
-      // gesture frames never displayed.)
-      if (animationRef.current) cancelAnimationFrame(animationRef.current);
-      let step = 0;
-      let completed = false;
-      const advance = () => {
-        if (completed) return;
-        const now = performance.now();
-        if (now - lastFrameTimeRef.current >= durations[Math.min(step, durations.length - 1)]) {
-          lastFrameTimeRef.current = now;
-          if (step >= durations.length - 1) {
-            completed = true;
-            setFrameState({ pose, frame: poseData.count - 1 });
-            onAnimationComplete?.();
+      if (oneShotCompleted) {
+        const basePolicy = getPosePlaybackPolicy(pose, false);
+        if (basePolicy.kind === "one-shot") setFrame(basePolicy.finalFrame);
+        return;
+      }
+
+      setFrame(firstFrame(policy));
+      if (policy.kind === "static") {
+        if (policy.completes) completeOneShot();
+        return;
+      }
+
+      let stepIndex = 0;
+      let frameStartedAt = performance.now();
+      const advance = (now: number) => {
+        const step = policy.steps[stepIndex] ?? policy.steps[0];
+        if (now - frameStartedAt >= step.durationMs) {
+          if (policy.kind === "one-shot" && stepIndex === policy.steps.length - 1) {
+            setFrame(policy.finalFrame);
+            completeOneShot();
             return;
           }
-          step += 1;
-          setFrameState({ pose, frame: step % poseData.count });
+
+          stepIndex = (stepIndex + 1) % policy.steps.length;
+          frameStartedAt = now;
+          setFrame(policy.steps[stepIndex]?.frame ?? policy.steps[0].frame);
         }
-        animationRef.current = requestAnimationFrame(advance);
+        animationFrame = requestAnimationFrame(advance);
       };
-      animationRef.current = requestAnimationFrame(advance);
-      return () => {
-        completed = true;
-        cancelAnimationFrame(animationRef.current);
-      };
-    }
-  }, [pose, poseData.count, onAnimationComplete]);
+
+      animationFrame = requestAnimationFrame(advance);
+    };
+
+    startPlayback();
+    reducedMotion.addEventListener("change", startPlayback);
+    return () => {
+      reducedMotion.removeEventListener("change", startPlayback);
+      cancelAnimationFrame(animationFrame);
+    };
+  }, [pose]);
 
   const currentFrame = frameState.pose === pose ? frameState.frame : 0;
   const frameX = (poseData.start + currentFrame % poseData.count) * frameWidth;
@@ -147,34 +124,39 @@ export default function CharacterSprite({
 
   const style: React.CSSProperties = {
     position: "absolute",
-    left: position.x,
-    top: position.y,
-    width: frameWidth,
-    height: frameHeight,
-    transform: `translate(-50%, -100%) scale(${scale})`,
-    transformOrigin: "bottom center",
+    left: position.x - anchor.x * scale,
+    top: position.y - anchor.y * scale,
+    width: frameWidth * scale,
+    height: frameHeight * scale,
     overflow: "hidden",
     imageRendering: "pixelated",
     zIndex: 30,
   };
 
   return (
-    <div style={style} role="img" aria-label={`${agentKey} (${pose})`} data-actor-id={actorId}>
+    <div
+      style={style}
+      role={decorative ? undefined : "img"}
+      aria-label={decorative ? undefined : `${agentKey} (${pose})`}
+      aria-hidden={decorative || undefined}
+      data-actor-id={actorId}
+    >
       <Image
         src={meta.path}
         alt=""
         width={meta.width}
         height={meta.height}
+        unoptimized
         style={{
           position: "absolute",
-          left: -frameX,
-          top: -frameY,
-          width: meta.width,
-          height: meta.height,
+          left: -frameX * scale,
+          top: -frameY * scale,
+          width: meta.width * scale,
+          height: meta.height * scale,
           maxWidth: "none",
           imageRendering: "pixelated",
           filter:
-            "drop-shadow(1px 0 #0F172A) drop-shadow(-1px 0 #0F172A) drop-shadow(0 1px #0F172A) drop-shadow(0 -1px #0F172A)",
+            "drop-shadow(1px 0 var(--canvas)) drop-shadow(-1px 0 var(--canvas)) drop-shadow(0 1px var(--canvas)) drop-shadow(0 -1px var(--canvas))",
         }}
       />
     </div>

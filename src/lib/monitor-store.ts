@@ -15,13 +15,11 @@ import {
   deriveInvocationId,
   generateEventId,
   generateEpoch,
-  TASK_CATEGORIES,
   type TaskCategory,
   type CubicleLegacy,
 } from "./monitor-types";
 import { isSupabaseEnabled } from "./supabase";
-import { seatForAgent, ROSTER_KEYS, STANDING_ADMIN } from "./scene/roster";
-import { AWAKE_WINDOW_MS } from "./scene/actor-pose";
+import { DEFAULT_VISIBLE_ROLE_KEYS, OPTIONAL_ROLE_KEYS, seatForAgent } from "./scene/roster";
 
 export type CubicleDTO = CubicleLegacy;
 
@@ -82,6 +80,7 @@ function ensureFloor(runtime: RuntimeState, floorId: string, sessionId: string, 
       createdAt: now,
       updatedAt: now,
       closed: false,
+      closedAt: null,
       sessionId,
     };
     runtime.floors.set(floorId, floor);
@@ -144,7 +143,7 @@ const seededFloors = new Set<string>();
  * Seed-schema epoch. Bump when seeding/remap rules change so live floors
  * reheal on their next event instead of drifting forever.
  */
-const ROSTER_EPOCH = 2;
+const ROSTER_EPOCH = 3;
 const floorSeedEpoch = new Map<string, number>();
 
 function seatRoleFor(agentKey: string): ActorInfo["role"] {
@@ -180,9 +179,8 @@ function ensureActor(runtime: RuntimeState, actorId: string, floorId: string, se
 }
 
 /**
- * Pre-occupy a fresh floor: every roster agent gets a sleeping desk (lamp
- * off, monitor off) the moment a session is detected — never an empty room.
- * Backfills live floors missing keys and remaps drifted seats to fixed ones.
+ * Pre-occupy a fresh floor with default roles. Optional roles get a desk only
+ * after real activity names them. Backfills defaults and remaps fixed seats.
  */
 function seedFloorRoster(
   runtime: RuntimeState,
@@ -191,13 +189,25 @@ function seedFloorRoster(
   rootSessionId: string,
   now: number
 ): void {
+  const optionalRoles = new Set(OPTIONAL_ROLE_KEYS);
+  for (const [actorId, actor] of runtime.actors) {
+    if (actor.floorId !== floor.floorId || !optionalRoles.has(actor.agentKey)) continue;
+    const wasOnlySeeded = actor.activity === "idle"
+      && actor.createdAt === actor.lastObservedAt
+      && actor.idleSince === actor.createdAt
+      && !Array.from(runtime.invocations.values()).some(
+        (invocation) => invocation.senderActorId === actorId || invocation.recipientActorId === actorId
+      );
+    if (wasOnlySeeded) runtime.actors.delete(actorId);
+  }
+
   // Remap every desk actor to its fixed seat (heals pre-roster dynamic
   // seats live; unknowns share the intern corner).
   for (const actor of runtime.actors.values()) {
     if (actor.floorId !== floor.floorId || actor.role === "system") continue;
     actor.seatIndex = seatForAgent(actor.agentKey);
   }
-  for (const key of ROSTER_KEYS) {
+  for (const key of DEFAULT_VISIBLE_ROLE_KEYS) {
     const existing = floorActorByKey(runtime, floor.floorId, key);
     if (existing) {
       continue;
@@ -209,7 +219,7 @@ function seedFloorRoster(
       sessionId: rootSessionId,
       agentKey: key,
       displayName: key,
-      role: key === STANDING_ADMIN ? "orchestrator" : "specialist",
+      role: "specialist",
       seatIndex: seatForAgent(key),
       lastObservedAt: now,
       createdAt: now,
@@ -275,8 +285,8 @@ function healGhostFloor(
   for (const inv of runtime.invocations.values()) {
     if (inv.floorId !== ghostFloorId) continue;
     inv.floorId = floor.floorId;
-    const s = foldedIds.get(inv.senderActorId);
-    const r = foldedIds.get(inv.recipientActorId);
+    const s = inv.senderActorId ? foldedIds.get(inv.senderActorId) : undefined;
+    const r = inv.recipientActorId ? foldedIds.get(inv.recipientActorId) : undefined;
     if (s) inv.senderActorId = s;
     if (r) inv.recipientActorId = r;
   }
@@ -291,16 +301,17 @@ function ensureInvocation(
   runtime: RuntimeState,
   invocationId: string,
   floorId: string,
-  senderActorId: string,
-  recipientActorId: string,
+  senderActorId: string | null,
+  recipientActorId: string | null,
   callId: string,
   parentInvocationId: string | null,
   agentKey: string,
   promptPreview: string | null,
   taskCategory: TaskCategory | null,
+  observedAt: number,
+  initialStatus: InvocationStatus,
 ): InvocationInfo {
   let invocation = runtime.invocations.get(invocationId);
-  const now = Date.now();
   if (!invocation) {
     invocation = {
       invocationId,
@@ -310,16 +321,24 @@ function ensureInvocation(
       callId,
       parentInvocationId,
       revision: 0,
-      executionStatus: "requested",
+      executionStatus: initialStatus,
       outcome: null,
       taskCategory,
       promptPreview,
-      requestedAt: now,
-      startedAt: null,
-      finishedAt: null,
+      requestedAt: initialStatus === "requested" ? observedAt : null,
+      startedAt: initialStatus === "started" ? observedAt : null,
+      finishedAt: initialStatus === "finished" ? observedAt : null,
     };
     runtime.invocations.set(invocationId, invocation);
   } else {
+    if (senderActorId) invocation.senderActorId = senderActorId;
+    if (recipientActorId) invocation.recipientActorId = recipientActorId;
+    if (parentInvocationId) invocation.parentInvocationId = parentInvocationId;
+    if (taskCategory) invocation.taskCategory = taskCategory;
+    if (promptPreview) invocation.promptPreview = promptPreview;
+    if (initialStatus === "requested" && invocation.requestedAt == null) {
+      invocation.requestedAt = observedAt;
+    }
     invocation.revision += 1;
   }
   return invocation;
@@ -330,14 +349,14 @@ function updateInvocationStatus(
   invocationId: string,
   status: InvocationStatus,
   outcome: InvocationInfo["outcome"] = null,
+  observedAt: number = Date.now(),
 ): InvocationInfo | null {
   const invocation = runtime.invocations.get(invocationId);
   if (!invocation) return null;
-  const now = Date.now();
   invocation.executionStatus = status;
-  if (status === "started" && !invocation.startedAt) invocation.startedAt = now;
+  if (status === "started" && !invocation.startedAt) invocation.startedAt = observedAt;
   if (status === "finished" || status === "failed" || status === "cancelled") {
-    invocation.finishedAt = now;
+    invocation.finishedAt = observedAt;
     invocation.outcome = outcome;
   }
   invocation.revision += 1;
@@ -351,17 +370,6 @@ function getActorActiveInvocations(runtime: RuntimeState, actorId: string): Invo
   );
 }
 
-function getActorLastSuccessAt(actorId: string, runtime: RuntimeState): number | null {
-  let latest: number | null = null;
-  for (const inv of runtime.invocations.values()) {
-    if (inv.finishedAt == null) continue;
-    if (inv.outcome !== "succeeded" && inv.outcome !== "unknown") continue;
-    if (inv.senderActorId !== actorId && inv.recipientActorId !== actorId) continue;
-    if (latest == null || inv.finishedAt > latest) latest = inv.finishedAt;
-  }
-  return latest;
-}
-
 function deriveActorState(actorId: string, runtime: RuntimeState): CubicleLegacy["state"] {
   const actor = runtime.actors.get(actorId);
 
@@ -373,12 +381,6 @@ function deriveActorState(actorId: string, runtime: RuntimeState): CubicleLegacy
       return active.some(inv => inv.senderActorId === actorId) ? "delegating" : "thinking";
     }
     return "working";
-  }
-
-  // Just-finished success beat (monitor stays ON idle for the awake window).
-  const lastSuccess = getActorLastSuccessAt(actorId, runtime);
-  if (lastSuccess != null && Date.now() - lastSuccess < AWAKE_WINDOW_MS) {
-    return "celebrating";
   }
 
   // Prefer V2 actor.activity state when available
@@ -561,6 +563,7 @@ function upsertV1(
     project: floor.projectId,
     status: floorStatus,
     updatedAt: floor.updatedAt,
+    closedAt: floor.closedAt,
     cubicles: floor.legacyCubicles,
   } as unknown as FloorInfo;
 }
@@ -612,7 +615,7 @@ function upsertV2(
   // Parent linkage arrived late: fold the orphaned self-root floor in.
   healGhostFloor(runtime, store, deriveFloorId(projectId, rootSessionId), floor);
 
-  // Pre-occupy the floor on first sight: full sleeping roster, no empty room.
+  // Pre-occupy the floor with default sleeping roles, never optional fillers.
   // Re-runs when the seed epoch bumps (live floors reheal instead of drift).
   if (floorSeedEpoch.get(floorId) !== ROSTER_EPOCH) {
     seedFloorRoster(runtime, floor, projectId, resolvedRoot, now);
@@ -642,9 +645,14 @@ function upsertV2(
   const parentInvocationId = detail?.parentInvocationId ?? null;
   // Rewrite links onto merged floor actors so poses and busy counts stay
   // correct across sessions.
-  const senderActorId = resolveActorId(runtime, floorId, detail?.senderActorId ?? actorId);
-  const recipientActorId = resolveActorId(runtime, floorId, detail?.recipientActorId ?? actorId);
-  const invocationId = deriveInvocationId(projectId, senderActorId, callId);
+  const senderActorId = detail?.senderActorId
+    ? resolveActorId(runtime, floorId, detail.senderActorId)
+    : null;
+  const recipientActorId = detail?.recipientActorId
+    ? resolveActorId(runtime, floorId, detail.recipientActorId)
+    : null;
+  // Session plus call ID is stable even when endpoint facts arrive late.
+  const invocationId = deriveInvocationId(projectId, sessionId, callId);
   const promptPreview = detail?.promptPreview ?? null;
   const taskCategory = detail?.taskCategory ?? null;
   const revision = detail?.revision ?? 0;
@@ -681,33 +689,24 @@ function upsertV2(
         actorKey,
         promptPreview,
         taskCategory,
+        now,
+        "requested",
       );
       emitEvent(runtime, "invocation.requested", { floorId, invocation });
       break;
     }
     case "invocation.started": {
-      const invocation = updateInvocationStatus(runtime, invocationId, "started");
-      if (invocation) {
-        emitEvent(runtime, "invocation.started", { floorId, invocation });
-      }
+      ensureInvocation(runtime, invocationId, floorId, senderActorId, recipientActorId, callId,
+        parentInvocationId, actorKey, promptPreview, taskCategory, now, "started");
+      const invocation = updateInvocationStatus(runtime, invocationId, "started", null, now);
+      if (invocation) emitEvent(runtime, "invocation.started", { floorId, invocation });
       break;
     }
     case "invocation.finished": {
       const outcome = detail?.outcome ?? "unknown";
-      const invocation = updateInvocationStatus(runtime, invocationId, "finished", outcome);
-      if (!invocation) {
-        // Unknown invocation (e.g. missed requested): still rest the named
-        // desk so a lost finish can't leave it typing forever. No success
-        // beat without a record — just idle.
-        if ((outcome === "succeeded" || outcome === "unknown") && detail?.agentKey) {
-          const named = floorActorByKey(runtime, floorId, detail.agentKey);
-          if (named && named.floorId === floorId) {
-            named.activity = "idle";
-            named.idleSince = now;
-            named.lastObservedAt = now;
-          }
-        }
-      }
+      ensureInvocation(runtime, invocationId, floorId, senderActorId, recipientActorId, callId,
+        parentInvocationId, actorKey, promptPreview, taskCategory, now, "finished");
+      const invocation = updateInvocationStatus(runtime, invocationId, "finished", outcome, now);
       if (invocation) {
         emitEvent(runtime, "invocation.finished", { floorId, invocation });
         // Roster room: nobody exits. Desks are permanent — a finished agent
@@ -715,6 +714,7 @@ function upsertV2(
         // Mark involved actors idle when they have no other active work so
         // the success pose and awake window trigger correctly.
         for (const involvedId of [invocation.recipientActorId, invocation.senderActorId]) {
+          if (!involvedId) continue;
           const involved = runtime.actors.get(involvedId);
           if (!involved || involved.floorId !== floorId) continue;
           const stillActive = Array.from(runtime.invocations.values()).some(
@@ -741,7 +741,11 @@ export function closeFloor(floorId: string): boolean {
   const floor = store.get(floorId);
   if (!floor) return false;
 
+  if (floor.closed) return true;
+  const now = Date.now();
   floor.closed = true;
+  floor.closedAt = now;
+  floor.updatedAt = now;
   emitEvent(runtime, "floor.closed", { floorId });
   return true;
 }

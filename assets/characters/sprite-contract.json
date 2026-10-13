@@ -1,0 +1,25 @@
+{
+  "version": 1,
+  "frame": {
+    "width": 48,
+    "height": 48,
+    "columns": 24,
+    "rows": 4
+  },
+  "directions": ["down", "left", "right", "up"],
+  "poses": {
+    "idle": { "start": 0, "end": 3 },
+    "walk": { "start": 4, "end": 11 },
+    "seat": { "start": 12, "end": 13 },
+    "work": { "start": 14, "end": 15 },
+    "give": { "start": 16, "end": 17 },
+    "receive": { "start": 18, "end": 19 },
+    "success": { "start": 20, "end": 21 },
+    "error": { "start": 22, "end": 23 }
+  },
+  "anchor": { "x": 24, "y": 46 },
+  "opaqueBodyBounds": { "maxWidth": 32, "maxHeight": 38 },
+  "atlas": { "width": 1152, "height": 192, "frames": 96 },
+  "alpha": "binary",
+  "layerOrder": ["body", "bottom", "top", "hair", "face", "accessory"]
+}

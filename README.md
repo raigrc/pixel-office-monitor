@@ -1,724 +1,285 @@
 # Pixel Office Monitor
 
-> Local real-time monitor that turns OpenCode sessions and delegated tasks into a live pixel office.
+Pixel Office Monitor shows observed OpenCode sessions as a live pixel office. It does not create, resume, prompt, interrupt, or attach to provider sessions.
 
-Each OpenCode **root session is one office floor**. Child sessions remain on their root floor, system actors stay hidden, and real agent actors occupy seven fixed desks. Active delegation shows sender/recipient links and task handoffs. Working actors type at lit monitors; resting actors hold still with `Zzz`.
+Settings also provides independent read-only OpenCode discovery and a Session Inspector for bounded recorded messages. Discovery and inspection do not create monitor floors or infer activity from saved records.
 
-**Current runtime (2026-09-08):** `OfficeScene` renders a fixed `384×256` room through `SceneViewport`, fitted to desktop or mobile without drag controls. Data arrives through authenticated SSE snapshots with persisted epoch/sequence cursors, replay on reconnect, exponential backoff, and `WAITING`/`LIVE`/`QUIET` freshness states. Character sheets provide 8 poses × 4 directions in 32×32 frames. Monitor assets have explicit off/on/working states and no baked duplicate monitor.
+The local checkout is the implementation baseline as of 2026-10-09. The former GitHub-based v2 drafts are historical proposals, not evidence of available features. [PLAN.md](PLAN.md) separates existing local work from the new roadmap.
 
-Older card/cubicle components and their generated assets remain as legacy prototypes. Current `/` rendering uses `OfficeScene`, `CharacterSprite`, `FloorSwitcher`, and `AgentInspector`.
+## Primary documents
 
-Sprint plan & checklist: [`PLAN.md`](./PLAN.md) · Stack: **Next.js 16** (App Router, Turbopack) · **Tailwind 4** · **TypeScript 5** · **swr** · **zod** · **Supabase** (flag-gated) · **Vitest 5**
+Exactly five documents define the project:
 
----
+| Document | Purpose |
+| --- | --- |
+| [README.md](README.md) | Run the current monitor |
+| [Product requirements](docs/PRD.md) | Current scope, target behavior, and acceptance criteria |
+| [Architecture](docs/ARCHITECTURE.md) | Current data flow and proposed control boundaries |
+| [Design](docs/DESIGN.md) | Existing visual system and deferred renderer choices |
+| [Implementation plan](PLAN.md) | Phase status, next work, and stop gates |
 
-## Architecture
+[Character sprite reference](docs/character-sprite-system.md) and its contact sheet are supporting asset references, not additional primary specifications. [Archive inventory](docs/archive/2026-10-09/README.md) records original documents, source archives, retention decisions, and verification limits. `AGENTS.md` and `CLAUDE.md` are agent entrypoints.
 
-```
-[OpenCode event + task hooks]
-          |
-          v  global plugin, debounced non-blocking POST
-[POST /api/ingest]
-          |
-          v  zod v1/v2 validation, dedupe, root-session grouping
-[global runtime store]
-  floors + sessions + actors + invocations + epoch/sequence event ring
-          |
-          +--> GET /api/state   snapshot/debug API
-          +--> GET /api/health  uptime + SSE metrics
-          +--> GET /api/events  authenticated SSE
-                    initial snapshot + live snapshots + 15s heartbeat
-                    replay from Last-Event-ID or ?lastEventId=
-                              |
-                              v
-[useMonitorState]
-          |
-          v
-[page.tsx -> FloorSwitcher -> SceneViewport -> OfficeScene]
-                               CharacterSprite + handoff controller
-```
+## Run the local monitor
 
-**Contract v2** (verified in `src/lib/schema.ts:48` + `src/lib/monitor-types.ts`): `POST /api/ingest` accepts both v1 and v2 payloads. v2 adds `eventId`, `producerId`, `projectId`, `sessionId`, `rootSessionId`, `parentSessionId`, `occurredAt`, `kind: session.upsert|actor.activity|invocation.requested|invocation.started|invocation.finished`, and detailed `detail` with `callId`, `senderActorId`, `recipientActorId`, `invocationStatus`, `outcome`, `taskCategory`, `promptPreview`. Acknowledgment returns `{ accepted, duplicate, epoch, sequence, eventId }`. v1 payloads are still accepted for backward compatibility.
+Use Node.js 22 or later and npm for the setup helpers. Next.js 16.3.4 itself requires Node.js 20.9 or later. OpenCode and an externally installed monitor plugin supply real events.
 
-**Server-side identity & state** (`src/lib/monitor-store.ts`, `src/lib/monitor-types.ts`): Each root session gets a `floorId = projectId:rootSessionId`. Child sessions share their parent's floor. Actors have stable `actorId = projectId:sessionId:agentKey` with `seatIndex`. Invocations tracked by `invocationId = projectId:senderSessionId:callId` with `parentInvocationId` for nested delegation. Epoch/sequence for SSE replay. Deduplication via `eventId`.
-
-Floor status derivation: `session.upsert` sets floor status; invocations derive cubicle state (`working|thinking|delegating|idle`). Prune: closed floors `>24h`, idle cubicles `>24h`, empty floors `>1h` (see `monitor-store.ts`).
-
----
-
-## Prerequisites
-
-| Requirement | Version | Note |
-|---|---|---|
-| Node.js | `>=20` | Next.js 16 requires 18.18+; 20 LTS verified (`node -v`) |
-| npm | `>=10` | ships with Node 20 (`npm -v`) |
-| OpenCode | any | for live signal — plugin auto-loads |
-
-No database required for local MVP — in-memory `Map` is default.
-
----
-
-## Setup
-
-### 1. Clone & enter
-
-```powershell
-cd C:\Users\DELL\Desktop\Rai\pixel-office-monitor
-```
-
-### 2. Environment
-
-Copy the example and fill placeholders — **never commit real keys** (see `.env.example`):
-
-```powershell
-copy .env.example .env.local
-```
-
-`.env.local` (verified keys — do not paste real token, use placeholder):
-
-```ini
-MONITOR_TOKEN=<YOUR_TOKEN>                  # server expects this (also reads PIXEL_MONITOR_TOKEN, fallback dev-token)
-NEXT_PUBLIC_PIXEL_MONITOR_TOKEN=<YOUR_TOKEN> # browser SSE token; must match MONITOR_TOKEN
-NEXT_PUBLIC_USE_SUPABASE=0                 # 0 = Map (local), 1 = Supabase
-NEXT_PUBLIC_SUPABASE_URL=                  # required only when flag=1
-NEXT_PUBLIC_SUPABASE_ANON_KEY=             # required only when flag=1
-SUPABASE_SERVICE_ROLE_KEY=                 # required only when flag=1 (server-only, never prefix NEXT_PUBLIC_)
-PIXEL_MONITOR_URL=http://localhost:3001/api/ingest
-PIXEL_MONITOR_TOKEN=<YOUR_TOKEN>           # must match MONITOR_TOKEN
-```
-
-| Var | Where | Purpose |
-|---|---|---|
-| `MONITOR_TOKEN` | server `.env.local` | token checked by `POST /api/ingest` (also accepts `PIXEL_MONITOR_TOKEN`) |
-| `NEXT_PUBLIC_PIXEL_MONITOR_TOKEN` | browser bundle | token used by `EventSource`; must match `MONITOR_TOKEN` (local-only, publicly visible) |
-| `PIXEL_MONITOR_TOKEN` | plugin env | sent as `x-monitor-token` + `x-token` + `Bearer` |
-| `PIXEL_MONITOR_URL` | plugin env | ingest URL (hardcoded fallback `http://localhost:3001/api/ingest`) |
-| `NEXT_PUBLIC_USE_SUPABASE` | `0`/`1` | `0` Map, `1` Supabase — `isSupabaseEnabled()` checks `1`/`true` |
-| `NEXT_PUBLIC_SUPABASE_URL` | Supabase project | only when flag `1` |
-| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Supabase project | only when flag `1` |
-| `SUPABASE_SERVICE_ROLE_KEY` | server only | only when flag `1`, never expose to client |
-
-> Token mapping: server routes read `MONITOR_TOKEN || PIXEL_MONITOR_TOKEN || "dev-token"`; plugin uses `PIXEL_MONITOR_TOKEN`; browser SSE uses `NEXT_PUBLIC_PIXEL_MONITOR_TOKEN`. All three values must match locally.
-
-### 3. Plugin locations
-
-The signal layer is a **global OpenCode plugin** — two mirrored copies (PLAN §3, verified both exist):
-
-```
-C:\Users\DELL\Desktop\Rai\.opencode\plugins\pixel-monitor.js      (project global)
-C:\Users\DELL\.config\opencode\plugins\pixel-monitor.js            (user global, 11,728 B)
-```
-
-Both are identical. The plugin uses a single `event` hook + `tool.execute.before/after` for `task`, debounce `300ms` per `(sessionID,agent)`, `keepalive:true`, `2s` abort, never throws (verified `pixel-monitor.js:40-87`). Edit one and copy to the other, or keep both in sync:
-
-```powershell
-copy C:\Users\DELL\Desktop\Rai\.opencode\plugins\pixel-monitor.js C:\Users\DELL\.config\opencode\plugins\pixel-monitor.js
-```
-
-No `npm` deps for the plugin — plain `fetch`.
-
-### 4. Install
+1. Open a terminal in `C:\Development\pixel-office-monitor`.
+2. Install dependencies.
 
 ```powershell
 npm install
 ```
 
----
+3. Configure `.env.local` in the repository root. A local `.env.example` exists but is ignored by `.env*`. Review that template locally before using it. It is not a tracked setup dependency, and this phase does not allowlist it.
 
-## How to run
+Use your own local token in place of the placeholders:
 
-```powershell
-# 1. start monitor (port 3001 — not 3000)
-npm run dev -- -p 3001
-# → http://localhost:3001
-
-# 2. in another terminal, trigger a live signal
-#    from any OpenCode session in C:\Users\DELL\Desktop\Rai
-opencode
-# then inside OpenCode:
-@explore find auth logic
-
-# 3. watch http://localhost:3001 — floor appears within 1s, cubicle shows working → sleeping after ~10s idle
+```ini
+MONITOR_TOKEN=REPLACE_WITH_LOCAL_RANDOM_VALUE
+NEXT_PUBLIC_PIXEL_MONITOR_TOKEN=REPLACE_WITH_SAME_LOCAL_VALUE
+NEXT_PUBLIC_USE_SUPABASE=0
 ```
 
-* Primary transport: authenticated `EventSource("/api/events")` through `useMonitorState`.
-* Reconnect: persisted `pixel:monitorCursor`, exponential backoff with jitter, maximum 5 automatic retries, then manual retry.
-* Empty state: `◧ no active floor` inside the fitted room viewport.
+4. Set these values in the environment of the OpenCode process that loads the plugin:
 
-Build/preview:
+```ini
+PIXEL_MONITOR_URL=http://localhost:3001/api/ingest
+PIXEL_MONITOR_TOKEN=REPLACE_WITH_SAME_LOCAL_VALUE
+```
+
+The server reads `MONITOR_TOKEN`, then `PIXEL_MONITOR_TOKEN`, then its development fallback. Configure a real local value instead of relying on that fallback. The browser reads `NEXT_PUBLIC_PIXEL_MONITOR_TOKEN`. These token values must match.
+
+5. Start the monitor on loopback.
+
+```powershell
+npm run dev -- --hostname 127.0.0.1 -p 3001
+```
+
+6. Open `http://localhost:3001`. Start an instrumented OpenCode session and run a task. A root session appears as a floor when the monitor receives its events. Inspect an actor to see available activity details.
+
+Keep port 3001 protected. Do not stop or restart a user-owned process to run verification. Use an isolated loopback server on port 3011 when needed, and stop only the server you started.
+
+The browser token is public client data, not a production secret. Existing token checks are insufficient for privileged provider control or internet exposure. Do not expose the monitor to the LAN or internet without a separate authentication and authorization design.
+
+### External plugin installation
+
+The owner confirmed plugins are installed externally, including the user-global OpenCode plugin directory at `C:\Users\DELL\.config\opencode\plugins\`. Plugin code is not shipped by this repository. This phase does not establish that any project-level copy matches the user-global copy.
+
+If events do not arrive, check the plugin loaded in the actual OpenCode process, its configured ingest URL, and its token. Restart OpenCode after changing plugin configuration. Do not copy over an external plugin from a historical path without reviewing its version and ownership.
+
+### Production preview
+
+Do not build against a user-owned development server using the same `.next` directory without coordination. Previous local notes report stale chunks after a build.
 
 ```powershell
 npm run build
-npm run start -- -p 3001
+npm run start -- --hostname 127.0.0.1 -p 3001
 ```
 
-Settings UI: `http://localhost:3001/settings`
+Set `NEXT_PUBLIC_*` values before building. Next.js inlines them into the browser bundle. Changing `.env.local` afterward does not update an existing production bundle.
 
----
+## Continue on a new Mac
 
-## API Reference
+The current delivery branch is `fix/3d-colony-v1`. Clone that branch rather than the older default branch:
 
-Base: `http://localhost:3001`
-
-All routes: `runtime = "nodejs"`, `dynamic = "force-dynamic"`, `Cache-Control: no-store`.
-
-### `POST /api/ingest` — ingest a signal
-
-**Auth** — one of (all accepted, verified `src/app/api/ingest/route.ts:16`):
-
-```
-x-monitor-token: <YOUR_TOKEN>
-x-token: <YOUR_TOKEN>
-Authorization: Bearer <YOUR_TOKEN>
-Authorization: <YOUR_TOKEN>          # raw token also accepted
+```sh
+git clone --branch fix/3d-colony-v1 https://github.com/raigrc/pixel-office-monitor.git
+cd pixel-office-monitor
+npm ci
 ```
 
-`401 { ok:false, error:"unauthorized" }` on missing/mismatch. `400` on invalid JSON or zod failure with `issues[]`. `405` on `GET`.
+The branch includes application source, tests, sprite source layers, generated assets, generators, the five primary docs, and the read-only Session Inspector. Native history hardening and Prompt Control remain planned.
 
-**Payload v1** — zod `ingestPayloadSchema` (`src/lib/schema.ts:48`):
+1. Install Node.js 22 or later and OpenCode. Discovery/history currently supports OpenCode 1.18.35. Python with Pillow is needed for sprite tests and regeneration. The tests invoke `python`; a project virtual environment supplies that command on Mac:
 
-```json
-{
-  "v": 1,
-  "ts": 1700000000000,
-  "sessionID": "ses_abc123",
-  "project": "pixel-office-monitor",
-  "title": "Explore auth",
-  "agent": "explore",
-  "kind": "subtask.start",
-  "status": "working",
-  "detail": {
-    "prompt": "find auth logic",
-    "tool": "grep",
-    "todos": [{ "content": "scan src", "status": "in_progress" }]
-  }
-}
+```sh
+python3 -m venv .venv
+source .venv/bin/activate
+python -m pip install Pillow
+```
+2. Create private `.env.local` using the monitor keys above, or restore it from the separate private backup. Generate fresh device credentials with `node scripts/rotate-monitor-token.mjs --apply`; it updates the three stored monitor keys without printing values. Do this before starting the monitor or producer.
+3. Restore the external monitor plugin to OpenCode's configured global plugin directory, commonly `~/.config/opencode/plugins/pixel-monitor.js`. Review any Windows-specific paths in the copied plugin and personal configuration. The plugin is not included in this repository.
+4. Start the monitor with `npm run dev -- --hostname 127.0.0.1 -p 3001`.
+5. From this checkout, load the producer token without printing it and start an instrumented OpenCode TUI:
+
+```sh
+export PIXEL_MONITOR_URL=http://127.0.0.1:3001/api/ingest
+export PIXEL_MONITOR_TOKEN="$(node -e 'const fs=require("node:fs");const {parseEnv}=require("node:util");const env=parseEnv(fs.readFileSync(".env.local","utf8"));process.stdout.write(env.MONITOR_TOKEN||env.PIXEL_MONITOR_TOKEN||"");')"
+opencode
 ```
 
-| Field | Type | Required | Notes |
-|---|---|---|---|
-| `v` | `1` | yes | literal |
-| `ts` | `int ≥0` | yes | `Date.now()` ms |
-| `sessionID` | `string ≥1` | yes | floor key |
-| `project` | `string ≥1` | yes | display basename via `formatProject()` |
-| `title` | `string ≤200` | no | session title |
-| `agent` | `string ≥1` | yes | cubicle key per floor |
-| `kind` | enum | yes | `subtask.start` \| `subtask.end` \| `session.busy` \| `session.idle` \| `session.created` \| `tool.before` \| `tool.after` \| `todo.updated` |
-| `status` | `working`\|`idle` | yes | drives floor + cubicle state |
-| `detail.prompt` | `string` | no | trimmed `trim().slice(0,200)` via transform |
-| `detail.tool` | `string` | no | `lastTool` ≤100 chars in store |
-| `detail.todos` | `Todo[]` | no | passthrough, capped 20 in store; each `{content?, text?, status?, state?, priority?, activeForm?}` |
+6. For discovery, run `node scripts/configure-opencode-discovery.mjs --apply` before the monitor starts, or reload the monitor after configuration changes. Update `PIXEL_OPENCODE_DIRECTORY` to the actual Mac checkout path. Configure the private provider password in the provider terminal to match `.env.local`, then start a separate loopback `serve --pure` server on 4097. Re-enroll with `node scripts/enroll-opencode-history.mjs --approve-plugin-free` after confirming that connection. Do not reuse a Windows enrollment digest after changing directory or credentials.
+7. Verify an ordinary OpenCode task produces accepted ingest, a visible session, and SSE LIVE. The separate pure discovery server does not load the external monitor plugin.
 
-**Payload v2** — zod `ingestPayloadV2Schema` (`src/lib/schema.ts:100`), adds reliable delegation identity:
+GitHub does not carry `.env.local`, ignored asset backups, personal OpenCode configuration, authentication data, or native session databases. Transfer the separate private backup through a trusted private channel. Native sessions belong to OpenCode, not this monitor. Restore or import them separately using the provider's supported workflow; do not overwrite an existing Mac database without a separate backup.
 
-```json
-{
-  "v": 2,
-  "eventId": "abc123-xyz",
-  "producerId": "opencode-plugin",
-  "projectId": "pixel-office-monitor",
-  "sessionId": "ses_child_001",
-  "rootSessionId": "ses_root_001",
-  "parentSessionId": "ses_root_001",
-  "occurredAt": 1700000000000,
-  "kind": "invocation.requested",
-  "detail": {
-    "callId": "call_123",
-    "parentInvocationId": "inv_parent",
-    "agentKey": "senior-engineer",
-    "senderActorId": "pixel-office-monitor:ses_root_001:orchestrator",
-    "recipientActorId": "pixel-office-monitor:ses_child_001:senior-engineer",
-    "invocationStatus": "requested",
-    "outcome": null,
-    "taskCategory": "implementation",
-    "promptPreview": "Implement auth..."
-  }
-}
+`align-monitor-producer.mjs`, the User-registry diagnostic, and the command-gate harness are Windows-oriented. On Mac, use the shell exports above and run `npm test`, `npx tsc --noEmit`, `npm run lint`, and `npm run build` directly. The diagnostic's installed-plugin path currently points to the Windows owner profile.
+
+### Windows private backup status
+
+The verified private ZIP is under ignored `Temp/opencode/mac-migration/windows-step7-20261012T163816Z-p1cz9rii/windows-step7-private.zip`. It contains 631 files covering project environment files, owner asset backups, personal OpenCode configuration/plugins/agents/skills, authentication, and small legacy storage files. Transfer it separately from GitHub. It contains credentials and private data.
+
+The approximately 8 GB native SQLite database is not included in that verified ZIP. Online snapshot/validation exceeded its deadline, and free space prevents another full duplicate. An unverified snapshot remains under `Temp/opencode/mac-migration/windows-step7-20261012T162656Z-c009k5v9/sqlite-attempts/`. Structural checks passed but integrity validation did not finish. Do not treat it as a verified native-history backup or erase the Windows original. Native-history migration remains open.
+
+## Current monitor behavior
+
+- Root sessions own floors. Child sessions resolve to their root floor. System actors stay hidden.
+- The fixed layered office is `512×384`, with sixteen desk anchors. Eleven roles seed default desks. Observed `build`, `plan`, `general`, and `scout` use optional seats 11 through 14. Unknown roles share visitor seat 15. The observed orchestrator stands separately.
+- Character playback uses 48×48 RGBA frames in 1152×192 sheets. Twenty-four columns, four direction rows, and eight poses give 96 frames per atlas. There are 22 generated atlases for 21 registered keys plus fallback.
+- SSE provides authenticated snapshots, epoch and sequence cursors, reconnect replay, and freshness labels `WAITING`, `LIVE`, and `QUIET`.
+- Session navigation supports grouping, search, pinning, monitor-floor rename and close, follow mode, two-summary comparison, and lifecycle notifications. Closing a monitor floor does not stop an OpenCode session.
+- Both renderers use shared activity and role identity. A view switch must not fabricate provider events.
+- Three.js 0.186 remains a live dependency. `SceneViewport` mounts 3D after first activation and retains it, pausing hidden 3D rendering. Hidden 2D sprite timers remain active. There is no explicit experimental feature flag today.
+- Supabase helpers, clients, a migration, and a flag exist. The flag branch in `monitor-store.ts` is a placeholder. Flipping the flag does not switch monitor persistence away from memory.
+
+`/demo`, `/character-demo`, and `/settings` remain available. Settings control prompt preview, display path redaction, and CRT overlay. Reduced motion follows the operating-system preference.
+
+## Configure read-only OpenCode discovery
+
+The first discovery slice supports OpenCode `1.18.35`. It reads an explicitly configured loopback server using `GET /global/health` and `GET /api/session`. It does not launch a provider server automatically. An existing headless server can read the provider's persisted database without owning work executing in another process.
+
+Add these server-only values to ignored `.env.local`. Replace placeholders locally; do not reuse the monitor token as the discovery secret:
+
+```ini
+PIXEL_DISCOVERY_ORIGIN=http://127.0.0.1:3001
+PIXEL_DISCOVERY_ACCESS_SECRET=REPLACE_WITH_INDEPENDENT_RANDOM_SECRET
+PIXEL_OPENCODE_URL=http://127.0.0.1:4096
+PIXEL_OPENCODE_DIRECTORY=C:\Development\pixel-office-monitor
+PIXEL_OPENCODE_USERNAME=opencode
+PIXEL_OPENCODE_PASSWORD=REPLACE_WITH_PROVIDER_SERVER_PASSWORD
 ```
 
-| Field | Type | Required | Notes |
-|---|---|---|---|
-| `v` | `2` | yes | literal |
-| `eventId` | `string` | yes | unique, for deduplication |
-| `producerId` | `string` | no | plugin instance ID |
-| `projectId` | `string` | yes | project namespace |
-| `sessionId` | `string` | yes | actual calling session |
-| `rootSessionId` | `string` | yes | root session for floor grouping |
-| `parentSessionId` | `string` | no | immediate parent session |
-| `occurredAt` | `int ≥0` | yes | event timestamp ms |
-| `kind` | enum | yes | `session.upsert` \| `actor.activity` \| `invocation.requested` \| `invocation.started` \| `invocation.finished` |
-| `detail.callId` | `string` | no | stable call identifier |
-| `detail.parentInvocationId` | `string` | no | for nested delegation |
-| `detail.agentKey` | `string` | no | agent role |
-| `detail.senderActorId` | `string` | no | explicit sender |
-| `detail.recipientActorId` | `string` | no | explicit recipient |
-| `detail.invocationStatus` | enum | no | `requested`\|`started`\|`finished`\|`failed`\|`cancelled` |
-| `detail.outcome` | enum | no | `succeeded`\|`failed`\|`cancelled`\|`unknown` |
-| `detail.taskCategory` | enum | no | `research`\|`design`\|`implementation`\|`testing`\|`operations`\|`other` |
-| `detail.promptPreview` | `string` | no | sanitized preview for UI |
+Use at least 32 random bytes for the independent discovery secret. A 43-character base64url encoding is suitable. `PIXEL_OPENCODE_PASSWORD` is optional only when the configured provider server does not require Basic authentication. The username defaults to `opencode`. Neither credential enters the browser bundle.
 
-**Response v2** — `200 { accepted, duplicate, epoch, sequence, eventId }`. `duplicate: true` means event was already processed (idempotent). v1 returns `200 { ok: true }`.
-
-**cURL (copy-pasteable):**
+If no provider server exists, start one yourself on an unused loopback port. Set its `OPENCODE_SERVER_PASSWORD` and optional `OPENCODE_SERVER_USERNAME` in that terminal to match the server-side discovery credentials. Do not replace an existing user-owned process.
 
 ```powershell
-# good token
-curl -X POST http://localhost:3001/api/ingest `
-  -H "Content-Type: application/json" `
-  -H "x-monitor-token: <YOUR_TOKEN>" `
-  -d "{\"v\":1,\"ts\":1700000000000,\"sessionID\":\"ses_test_001\",\"project\":\"pixel-office-monitor\",\"agent\":\"explore\",\"kind\":\"subtask.start\",\"status\":\"working\",\"detail\":{\"prompt\":\"find auth\",\"tool\":\"grep\"}}"
-
-# bad token → 401
-curl -X POST http://localhost:3001/api/ingest -H "x-monitor-token: wrong" -d "{}"
-
-# via Bearer
-curl -X POST http://localhost:3001/api/ingest -H "Authorization: Bearer <YOUR_TOKEN>" -H "Content-Type: application/json" -d "{\"v\":1,\"ts\":1700000000000,\"sessionID\":\"ses_1\",\"project\":\"p\",\"agent\":\"explore\",\"kind\":\"tool.before\",\"status\":\"working\"}"
+opencode serve --pure --hostname 127.0.0.1 --port 4096 --no-mdns
 ```
 
-Success: `200 { ok:true }`.
+After your own monitor restart, open `http://127.0.0.1:3001/settings`. The configured app origin must match the exact browser host and port. Enter the independent secret, choose **Unlock discovery**, then **Check OpenCode**. Unlock creates a 15-minute HttpOnly, SameSite=Strict cookie for this read-only API and does not contact the provider.
 
-Rate / flood note: no `429` — plugin debounce `300ms` per `(sessionID,agent)` + store prune covers flood (verified `pixel-monitor.js:40, ingest/route.ts:73`).
+Production discovery is now verified on this machine. Its prepared provider URL uses port 4097 because port 4096 reports version 7.8.1 and was left untouched. Seven production-panel checks passed against OpenCode 1.18.35, with 43 records matching native IDs and count. The verifier started or stopped no process. `scripts/configure-opencode-discovery.mjs --apply` adds only missing private settings and independent credentials without printing values. `scripts/verify-production-discovery.mjs` checks an already running provider and normal monitor without restarting them.
 
-### `GET /api/state` — current office snapshot
+Development allows `127.0.0.1` through Next.js `allowedDevOrigins` for dev-only resources such as HMR. This does not change the discovery API's exact Origin, Host, cookie or credential checks. Restart the development server yourself if it has not reloaded the updated config.
+
+The panel shows health/version and at most 50 metadata records, newest by creation time. Native session, project, parent and workspace IDs, update times, and reported archive times remain visible. Missing parents remain unresolved. Configured directories, provider cursors, unused metadata fields, and credentials stay server-side. Rows offer **Inspect recorded messages**. Another provider version can report healthy while listing remains explicitly unsupported.
+
+### Inspect recorded messages
+
+History requires the confirmed plugin-free OpenCode 1.18.35 connection on port 4097. Its server-private enrollment is already configured on this machine. The profile binds the provider origin, approved directory, Basic credentials, and pinned version. A changed configuration disables history until enrollment is updated. The profile does not detect a non-pure replacement process using the same endpoint and credentials.
+
+After confirming that the provider runs `serve --pure`, update enrollment with:
 
 ```powershell
-curl http://localhost:3001/api/state
+node scripts/enroll-opencode-history.mjs --approve-plugin-free
 ```
 
-Response `200` (sorted `floors` by `updatedAt` desc, cubicles by `agent`):
+This helper updates only `PIXEL_OPENCODE_HISTORY_PROFILE` in ignored `.env.local`. It prints no credentials and changes no processes. Reload your own monitor when server configuration changes.
 
-```json
-{
-  "floors": [
-    {
-      "sessionID": "ses_abc123",
-      "title": "Explore auth",
-      "project": "pixel-office-monitor",
-      "status": "working",
-      "updatedAt": 1700000000000,
-      "cubicles": [
-        { "agent": "explore", "kind": "subtask.start", "status": "working", "since": 1700000000000, "lastTool": "grep", "prompt": "find auth logic", "todos": [] }
-      ]
-    }
-  ]
-}
-```
+1. Open `http://127.0.0.1:3001/settings`, unlock discovery, and choose **Check OpenCode**.
+2. Choose **Inspect recorded messages** on a returned session.
+3. Use **Older messages** or **Latest messages** to replace the current page. Use **Clear inspection** to remove it.
 
-Headers: `Cache-Control: no-store, no-cache, must-revalidate, proxy-revalidate`.
+Each page contains at most five chronological messages, 50 projected parts, and 64 KiB of serialized data. Text parts and combined tool arguments/output are capped at 4 KiB. Raw provider responses above 256 KiB return an explicit limit error. The initial 20-message design exceeded that cap for 41 of 48 real sessions. The five-message probe accepted five of ten sessions, all with continuations, while five still exceeded the cap. Successful backward paging is verified for one selected real session, not general history coverage.
 
-### `GET /api/events` — SSE live stream
+The Inspector shows escaped text, recorded agent labels, and explicitly recorded tool states. Reasoning, files, media, raw errors, and arbitrary provider metadata are omitted. Configured credentials and known credential patterns are redacted before clipping. Recorded content can still contain private paths or other private text. No media or external link is loaded.
+
+Selection and history remain in memory for at most five minutes, bounded by the owner cookie. New reads, metadata refresh, failure, Clear, expiry, navigation, and page restoration discard the previous page. Relationships use only the loaded metadata page and remain incomplete. Inspection never resumes or prompts a provider session.
+
+History deliberately uses scoped legacy `/session/:id/message` reads. The newer API returned an empty projection for a session with real legacy messages. Legacy GETs can initialize provider-managed location or cache metadata, so read-only inspection is not a zero-filesystem-write guarantee.
+
+Normal port-3001 Inspector passes ten checks against the existing provider, including five latest messages, five older messages, and 17 recorded tool parts for one selected session. Monitor sequence and floor/actor/invocation counts remained unchanged during the window. No owner process was started or stopped. Aggregate evidence is under `Temp/opencode/production-history/`.
+
+## Log-security housekeeping
+
+Phase 0 is checkpointed at `267cee9`, `chore: consolidate docs and archive legacy code`. Later security housekeeping found ten full configured monitor-token occurrences across `dev-test.log` and `dev-smoke-3dfix.log`. Both logs were redacted. Six generated logs were removed from the Git index and retained locally under ignore rules. Existing Git history was not rewritten.
+
+Stored `MONITOR_TOKEN`, `PIXEL_MONITOR_TOKEN`, and `NEXT_PUBLIC_PIXEL_MONITOR_TOKEN` now share a newly generated value. The agent did not restart user-owned processes. A read-only check confirms the current production monitor accepts the stored rotated token. Reload the browser and restart any OpenCode process or shell that still holds the old value. Refresh shell-level token overrides. Rebuild a production monitor if its browser token predates rotation. No token value appears in the reports.
+
+Repeat the broad retained-log scan with `node scripts/audit-logs.mjs`. Explicit `--redact` sanitizes findings without deleting other log content. The scanner identifies known provider-key formats, credentials in authorization headers and URL queries, assignments, private keys, JWTs, and configured values. Pattern matches do not prove every secret format is detectable. The rotation helper's `--apply` rotates stored monitor values only; it never restarts processes or rotates unrelated provider credentials.
+
+## Commands and verification status
+
+`package.json` defines these commands:
 
 ```powershell
-curl -N "http://localhost:3001/api/events?token=<YOUR_TOKEN>"
+npm test
+npm test -- --maxWorkers=2
+npx tsc --noEmit
+npm run lint
+npm run build
 ```
 
-* Requires the same token forms as ingest, plus `?token=` for browser `EventSource`.
-* Sends an immediate `snapshot`, a fresh sanitized snapshot after each store event, and a heartbeat comment every 15 seconds.
-* Replays event-ring entries after `Last-Event-ID` or `?lastEventId=epoch:sequence`, then sends the current snapshot.
-* Limits concurrent SSE connections per IP and returns `429` with `Retry-After: 30` over the cap.
-* Sanitizes invocation prompt previews before streaming and cleans up counters/listeners on abort.
+The main agent captured the Phase 0 baseline on branch `fix/3d-colony-v1` at `65923b3`:
 
-### `GET /api/health` — uptime & floor count
+| Check | Baseline result |
+| --- | --- |
+| `npm test` | 450 passed, one sprite-generator test timed out, 51 files |
+| `npm test -- --maxWorkers=2` | 451 passed across 51 files |
+| `npm run lint` | Zero errors, 31 warnings |
+| `npm run build` | Passed |
+| `npx tsc --noEmit` | Passed |
 
-```powershell
-curl http://localhost:3001/api/health
-# {"ok":true,"floorsCount":2,"uptime":12345,"timestamp":1700000000000}
-```
+Evidence for the captured default checks is under `Temp/opencode/phase0/baseline/`. After archival changes, both test commands pass 451 tests across 51 files. TypeScript and production build pass. Final lint has zero errors and 20 warnings. Evidence is under `Temp/opencode/phase0/final/`.
 
-Source: `getFloorsCount()` + `getUptimeMs()` from `monitor-store.ts` (`globalThis.__PIXEL_MONITOR_STORE__` singleton + `__PIXEL_MONITOR_START__`).
+The final production build passes 19 browser checks, including desktop and mobile SSE, actor and fixture-delegation updates, refresh, and single-canvas 3D toggling. A real OpenCode CLI 1.18.35 no-tool prompt completes and delivers session and actor events. The monitor remains observation-only; this CLI run is verification tooling, not browser session control.
 
----
+Repeat the checks with [verify-phase0.mjs](scripts/verify-phase0.mjs), [audit-phase0.mjs](scripts/audit-phase0.mjs), and [verify-monitor.mjs](scripts/verify-monitor.mjs). The browser check needs Chrome, locally installed Playwright Core, configured monitor credentials, and the external plugin. It uses port 3011 and creates a separate harmless provider session. Reports remain under ignored `Temp/opencode/phase0/`. See the archive inventory for assumptions and limits.
 
-## Settings
+The read-only discovery slice passes 520 tests across 52 files, TypeScript, production build, and lint with zero errors and the same 20 warnings. [verify-discovery.mjs](scripts/verify-discovery.mjs) passes 30 runtime/browser checks, including 41 real persisted records, credential isolation, desktop/mobile states, and unchanged monitor sequence and floors. It creates no provider sessions or prompts. It starts only isolated verification servers on ports 3011, 4097, and 4098, then confirms cleanup. Evidence is under ignored `Temp/opencode/discovery/`.
 
-Route: `/settings` (`src/app/settings/page.tsx`). All client-only, `localStorage` + same-tab sync via `StorageEvent` + `CustomEvent("pixel-settings")`. No server write.
+Use `node scripts/verify-phase0.mjs discovery` before the discovery browser check. Verification sets `PIXEL_VERIFY_ISOLATED=1`, writes Next.js output under ignored `Temp/opencode/next-verification/`, and uses a separate generated TypeScript config. Normal production output remains `.next`. The verifier checks that production build identity and manifests stay unchanged. Do not run an ordinary shared-output production build alongside an existing user-owned production server.
 
-| Toggle | localStorage key | Default | Effect (verified `src/app/page.tsx:44-140`) |
-|---|---|---|---|
-| **Show prompt preview** | `pixel:showPromptPreview` | `true` | When `false`, strips `cubicle.prompt` → `undefined` before render (hides 40-char line). Server still stores prompt (200-char cap); client trims only. |
-| **Redact file paths** | `pixel:redactPaths` | `false` | Regex replaces absolute paths with `[…]`: `/(?:\/[\w.\-]+)+(?:\/)?/g` and `[A-Za-z]:\\[^\s]*/` — applied display-only, store keeps original for debug. |
-| **CRT scanline overlay** | `pixel:crt` | `false` | Adds `.crt` class to `main` container. CSS `repeating-linear-gradient 6%` at `opacity:.6` (`globals.css:53-68`). `6%` token per PLAN §2. |
+Session Inspector passes 555 tests across 53 files, TypeScript, production build, and lint with zero errors and 20 existing warnings. Verification uses `node scripts/verify-phase0.mjs history`, followed by `node scripts/verify-opencode-history.mjs`. The latter uses the existing approved provider, an isolated monitor on 3011, and a fixture provider on 4198. It creates no provider sessions or prompts. Forty-one checks cover real paging, shared route admission, expiry, late-response disposal, actual navigation/back, inert content, desktop/mobile layout, storage isolation, and monitor sequence/entity-count continuity. Only fixture screenshots and aggregate reports are retained under `Temp/opencode/history/`. `node scripts/verify-opencode-history.mjs --production` verifies the already running normal panel without restarting owner processes. Run the two browser modes sequentially. The harness tracks its own Chrome child and confirms cleanup.
 
-**Reduce motion** — read-only mirror of OS `prefers-reduced-motion: reduce` (`matchMedia`). When active: sprite 200ms tick and `Zzz 1800ms` freeze (`Sprite.tsx:400-418`, `globals.css:118-128`, `page.tsx` banner). Change in OS settings; no app toggle needed.
+## Generate and review assets
 
-**Keys to clear in DevTools:** Application → Local Storage → `pixel:showPromptPreview`, `pixel:redactPaths`, `pixel:crt`. Hydration: `page.tsx:63` reads on mount, listens to `storage` + `pixel-settings`.
-
-> Note: to fully omit prompt server-side (before zod), gate `detail.prompt` in `pixel-monitor.js:54 send()` — currently render-only per plugin header comment `pixel-monitor.js:7-11`.
-
----
-
-## Character Sprites
-
-Current scene sheets live in `public/sprites/characters/`: `orchestrator.png`, `senior-engineer.png`, and `fallback.png`. Each sheet is `768×128`: 24 columns of 32×32 pose frames across four direction rows (`down`, `left`, `right`, `up`). Pose ranges are idle 0–3, walk 4–11, seat 12–13, work 14–15, give 16–17, receive 18–19, success 20–21, and error 22–23.
-
-Regenerate current scene assets:
+Install Python and Pillow separately from npm. Generators overwrite output, so inspect the diff after running them.
 
 ```powershell
 pip install Pillow
 python scripts/generate-office.py
 python scripts/generate-sprites.py
+python scripts/generate-sprites.py --check
 ```
 
-### Legacy CSS Sprite Library
+`scripts/cozy_theme.py` reads the shared theme for generation. `scripts/generate-assets.py` remains the procedural generator for older tiles, cubicle frames, props, and monitor PNGs. All public assets remain retained because external URL consumers are unknown. `floor-tile.png` still has a global CSS reference.
 
-15 agents + `intern`/`unknown` fallback — mapping verified `PLAN.md §1` ↔ `src/lib/agents.ts` ↔ `src/components/Sprite.tsx` (CSS grid 16×16 @ 48px, `image-rendering:pixelated`). States: `working` (2-frame alt, `setInterval 200ms` per `Sprite.tsx:430`) and `sleeping`/`idle` (X eyes + three `Z` at `14/12/10px` floating `1800ms` `floatZ`, staggered `0/0.4/0.8s`). Reduced-motion: frozen (`useReducedMotion`).
+See [Design](docs/DESIGN.md) for generator ownership and [Character sprite reference](docs/character-sprite-system.md) for source layers, provenance, validation, and the contact sheet.
 
-| Agent ID | Label | Role | Pixel Character | Prop / Working cue |
-|---|---|---|---|---|
-| `ai-systems` | AI Systems | AI Scientist | lab coat, neural node | 2×2 node pulse green `V`/`v` + white highlight on frame 0 |
-| `architect` | Architect | Architect | blueprint roll, T-square | `l` roll shifts + highlight |
-| `automation-engineer` | Automation | Technician | wrench, cables | wrench T shifts `y ±1` |
-| `devops` | DevOps | Operator | headset, rack LEDs | earcups `N` + LEDs `V` blink |
-| `documentation` | Documentation | Scribe | papers, pen | stack `U` + pen toggles `py` |
-| `project-manager` | Project Manager | Manager | clipboard, tie | tie `R` + clipboard `Y`, check `V` on frame 1 |
-| `qa-engineer` | QA Engineer | Inspector | magnifier, stamp | magnifier `M`/`I` shifts; handle `T` |
-| `researcher` | Researcher | Researcher | books, globe | `Q`/`q` stack + open page white on frame 1; globe pixel `V` |
-| `security-reviewer` | Security | Guard | shield, lock | shield `L`/`J` shimmer + lock `Y`/`O` |
-| `senior-engineer` | Senior Engineer | Engineer | laptop, hoodie | laptop `F` + screen `l`; hands `S` toggles with typing |
-| `build` | Build | Builder | hard hat, hammer | hammer handle `T` + head `W` moves `y ±1`; hard hat `H`/`h` |
-| `plan` | Plan | Planner | blueprints lite | `l` 2×3 shifts |
-| `general` | General | Generalist | hoodie, coffee | cup `T` + steam `W` rises |
-| `explore` | Explore | Scout | binoculars, lens | binoculars `N` + lenses `I` scan `L/R` |
-| `scout` | Scout | Librarian | book stack | `Q` stack + page line `W` |
-| `intern` / `unknown` | Intern | Intern | cap | cap `L` + brim; pocket highlight `w` (fallback) |
+## Troubleshoot event flow
 
-**Props palette** (`Sprite.tsx:32 CHAR_TO_HEX`): `S#F5D0A9` skin, `K` black hair, `H#F59E0B` hat, `W#E5E7EB` coat, `L#3B82F6` shield, `V#22C55E` green, `R#EF4444` tie, `P#1E293B` pants, etc.
+1. Check `http://localhost:3001/api/health` for local health diagnostics.
+2. Check the plugin's ingest URL and token. A rejected ingest or SSE request requires correcting authentication, not disabling token checks.
+3. Inspect `/api/state` locally to distinguish missing ingest data from a client-stream problem. State and health are local diagnostics, not private remote APIs.
+4. Check that the browser token matches the configured server token. Restart development after environment changes, or rebuild production when public values change.
+5. If 3D replays arrivals or actors disappear at close zoom, record a fresh-browser reproduction. Existing hydration and bounds fixes have code and unit coverage, but current browser replay and occlusion acceptance remain unverified.
 
-**Sprite as component:**
+Do not paste token-bearing URLs, logs, raw prompts, or credentials into reports. Existing ignored logs and tracked screenshots remain user data. Ignore rules do not untrack files already in Git.
 
-```tsx
-import Sprite from "@/components/Sprite";
-<Sprite spriteKey="senior-engineer" state="working" size={48} />   // 48 default (16×3px)
-<Sprite spriteKey="explore" state="sleeping" />
-// role=img aria-label="{spriteKey} {state}", title same
-```
+### Resolve ingest 401 after token rotation
 
-**Future PNG swap** (documented `Sprite.tsx:16-18`, `CubicleCard` ready): place sprites at
+The current incident showed that `.env.local` monitor keys authenticate, while the inherited and Windows User `PIXEL_MONITOR_TOKEN` were stale and rejected. The installed plugin captures its token at initialization. A truthy inherited token overrides its file fallback, so changing `.env.local` alone does not fix an existing producer.
 
-```
-public/sprites/<spriteKey>.png   # e.g. public/sprites/explore.png
-# recommended sheet: 144×48 (3 frames × 48), image-rendering:pixelated
-```
+`node scripts/audit-monitor-connection.mjs` compares credentials privately and probes authentication with malformed JSON. An authenticated probe returns 400 without creating an event. A rejected credential returns 401. Reports contain only source labels, equality flags, status codes, and state counts.
 
-Replace grid `div` with `<img>` + `background-position` per frame; keep `spriteKey` naming identical so `CubicleCard.tsx` needs no change. Add `<img onError>` fallback to CSS grid to keep crisp at 1.5× zoom.
+`node scripts/align-monitor-producer.mjs --apply` aligns only Windows User `PIXEL_MONITOR_TOKEN` with the validated monitor token. It preserves discovery credentials, checks authentication, and prints no values. This alignment is applied on this machine. Existing process environments remain unchanged.
 
----
-
-## Legacy Cubicle Assets
-
-These 43 PNGs were generated for the older card/cubicle UI by `scripts/generate-assets.py`. They remain available to legacy components. Current `OfficeScene` assets are under `public/sprites/office/` and `public/sprites/characters/`.
-
-### Background Tiles
-
-| File | Size | Purpose |
-|---|---|---|
-| `public/sprites/floor-tile.png` | 32×32 | Office carpet — repeating pattern, OLED dark `#0F172A` base with subtle grid lines and dot texture |
-| `public/sprites/wall-tile.png` | 32×32 | Wall segment — `#1E293B` body, `#334155` top edge, `#0B1220` baseboard, vertical line texture |
-| `public/sprites/door-tile.png` | 32×32 | Door — `#64748B` frame, `#334155` panel, `#E2E8F0` handle, hinge hints |
-
-### Cubicle Frames
-
-| File | Size | Purpose |
-|---|---|---|
-| `public/sprites/cubicle-idle.png` | 64×64 | Top-down cubicle — partition walls, desk, monitor (dim), chair; `#334155` border |
-| `public/sprites/cubicle-working.png` | 64×64 | Working state — green glow around monitor screen, `#22C55E` accent |
-
-### Desk Props (23 PNGs in `public/sprites/props/`)
-
-| File | Size | Agent(s) |
-|---|---|---|
-| `server-rack.png` | 24×16 | ai-systems, devops |
-| `neural-orb.png` | 8×8 | ai-systems |
-| `blueprint-scroll.png` | 16×20 | architect, plan |
-| `t-square.png` | 16×4 | architect |
-| `wrench.png` | 4×16 | automation-engineer |
-| `cable-coil.png` | 8×8 | automation-engineer |
-| `headset.png` | 12×8 | devops |
-| `paper-stack.png` | 12×12 | documentation |
-| `pen.png` | 2×12 | documentation |
-| `clipboard.png` | 8×12 | project-manager |
-| `coffee-mug.png` | 6×8 | project-manager, general, intern |
-| `magnifier.png` | 8×8 | qa-engineer |
-| `stamp.png` | 6×8 | qa-engineer |
-| `book-stack.png` | 12×12 | researcher, scout |
-| `globe.png` | 8×8 | researcher |
-| `padlock.png` | 6×8 | security-reviewer |
-| `camera.png` | 8×6 | security-reviewer |
-| `laptop.png` | 12×6 | senior-engineer |
-| `hard-hat.png` | 10×6 | build |
-| `toolbox.png` | 10×8 | build |
-| `compass.png` | 8×8 | plan |
-| `binoculars.png` | 10×6 | explore |
-| `map.png` | 12×8 | explore, scout |
-
-### Monitor Screens (15 PNGs in `public/sprites/monitors/`)
-
-Each is 16×8 pixels — a pixel-art monitor displaying agent-specific content:
-
-| File | Screen Content |
-|---|---|
-| `ai-systems.png` | Neural network nodes with connections |
-| `architect.png` | Blueprint schematic with grid |
-| `automation-engineer.png` | n8n workflow nodes with arrows |
-| `devops.png` | Terminal lines with blinking LEDs |
-| `documentation.png` | Document with text lines |
-| `project-manager.png` | Checklist with check marks |
-| `qa-engineer.png` | Test results grid (green/red) |
-| `researcher.png` | Search results list |
-| `security-reviewer.png` | Shield status display |
-| `senior-engineer.png` | Code editor with syntax coloring |
-| `build.png` | Build progress bar |
-| `plan.png` | Plan outline with boxes |
-| `general.png` | Terminal (same as devops) |
-| `explore.png` | Directory tree |
-| `scout.png` | External docs page |
-
-### How to Regenerate
+Exit the affected plugin-hosting OpenCode process yourself. In the PowerShell shell that starts it, reload the saved value and reopen OpenCode:
 
 ```powershell
-pip install Pillow
-python scripts/generate-assets.py
-# Output: public/sprites/**/*.png (43 files)
+$env:PIXEL_MONITOR_TOKEN = [Environment]::GetEnvironmentVariable("PIXEL_MONITOR_TOKEN", "User")
+opencode
 ```
 
-The script uses the same palette as `Sprite.tsx:32 CHAR_TO_HEX`. All pixel art is drawn procedurally — no external image files needed.
+Leave Pixel Monitor running. If the client attaches to an existing server, that server is the plugin host and must also receive the corrected environment when the owner reinitializes it. Actual event acceptance and floor rendering remain unverified until a corrected producer emits real events. No diagnostic creates synthetic activity to hide the failure.
 
----
+From Command Prompt, refresh and launch inside the same PowerShell child so a stale parent cannot pass the old token again:
 
-## Desk Props
-
-Each agent has 1–2 desk props rendered on the cubicle surface. Props are defined in `src/lib/agent-props.ts` and rendered by `src/components/DeskProps.tsx`.
-
-### How It Works
-
-1. `DeskProps` receives `agentId` + `isWorking`
-2. Calls `getAgentProps(agentId)` → returns `{ items: PropDef[] }`
-3. Each prop is an `<img>` positioned absolutely (`left`, `top`) inside the cubicle body
-4. When `isWorking`, props animate with `animate-prop-float` (2px bob, staggered 300ms)
-
-### Adding a New Agent Prop
-
-1. Create or reuse a PNG in `public/sprites/props/` (max ~24px recommended)
-2. Add entry to `AGENT_PROPS` in `src/lib/agent-props.ts`:
-
-```typescript
-"my-agent": {
-  items: [
-    { src: "/sprites/props/my-prop.png", x: "10%", y: "25%", w: 16, h: 16, alt: "description" },
-  ],
-},
+```cmd
+powershell.exe -NoProfile -Command "$env:PIXEL_MONITOR_TOKEN=[Environment]::GetEnvironmentVariable('PIXEL_MONITOR_TOKEN','User'); opencode.cmd --continue"
 ```
 
-3. Run `npm run build` — no other changes needed; `DeskProps` picks it up automatically via `getAgentProps(agentId)`
-
-### PropDef Shape
-
-```typescript
-type PropDef = {
-  src: string;   // PNG path from public/
-  x: string;     // CSS left (% or px)
-  y: string;     // CSS top (% or px)
-  w: number;     // render width in px
-  h: number;     // render height in px
-  alt: string;   // accessible alt text
-};
-```
-
-Unknown agents fall back to `INTERN_PROPS` (coffee mug).
-
----
-
-## Verification
-
-Commands verified `2026-09-08` on `pixel-office-monitor@0.1.0` (win32):
-
-| Command | Result | Notes |
-|---|---|---|
-| `npm test` | **140 pass / 9 files** | schema, ingest/store, SSE replay/metrics, grouping, system actors, presentation, and pose behavior |
-| `npx tsc --noEmit` | **pass** | no diagnostics |
-| `npm run build` | **pass** | Next.js 16.3.4 production build; `/`, `/demo`, `/character-demo`, `/settings`, and API routes generated |
-| `npm run lint` | **0 errors, 24 warnings** | unused legacy code, raw pixel `<img>` elements, and one hook dependency warning |
-| Runtime on `3001` | **pass** | `/`, `/demo`, and `/character-demo` return `200`; root HTML contains empty-state text |
-
-**Security posture: local-only.** Ingest and SSE reject bad tokens; zod validates ingress; SSE limits connections per IP and redacts prompt previews. `NEXT_PUBLIC_PIXEL_MONITOR_TOKEN` is intentionally visible in the browser and is not a production secret. `/api/state` and health data remain local diagnostics, Supabase policies permit anonymous reads when enabled, and ingest has no server-side rate limiter. Add separate user auth, private read authorization, origin controls, and ingest rate limiting before internet exposure.
-
-Re-run verification:
-
-```powershell
-npm test
-npm run build
-npm run lint
-```
-
----
-
-## Troubleshooting
-
-| Symptom | Cause | Fix |
-|---|---|---|
-| `401 { error:"unauthorized" }` on `POST /api/ingest` | token mismatch | Ensure `.env.local` `MONITOR_TOKEN=<YOUR_TOKEN>` matches plugin env `PIXEL_MONITOR_TOKEN=<YOUR_TOKEN>`. Restart `next dev` after editing env. Check header name — `x-monitor-token`, `x-token`, or `Authorization: Bearer <YOUR_TOKEN>` all valid (case-insensitive for Bearer). Try `curl` with each. |
-| `◧ no active floor` forever | no ingest or SSE auth mismatch | Confirm port 3001, trigger an OpenCode task, and ensure `MONITOR_TOKEN`, `NEXT_PUBLIC_PIXEL_MONITOR_TOKEN`, and plugin `PIXEL_MONITOR_TOKEN` match. Restart Next dev after env changes. Check `curl http://localhost:3001/api/state`. |
-| `port 3001 in use` / `EADDRINUSE` | another process on 3001 | `netstat -ano | findstr :3001` → `taskkill /PID <pid> /F`, or use `-p 3002` and update `PIXEL_MONITOR_URL=http://localhost:3002/api/ingest` in both env files + restart both. |
-| `npm run build` TypeScript errors | stale `.next` or TS drift | `rm -rf .next` (or `rmdir /s /q .next`), `npm run build` again. If `tsconfig` path alias `@/*` broken, check `tsconfig.json:21` maps `@/* → ./src/*`. |
-| `supabase` flag flip to cloud not showing data | `NEXT_PUBLIC_USE_SUPABASE=1` but env missing / RLS | MVP Map-first — `isSupabaseEnabled()` also checks `USE_SUPABASE` fallback. When `1`, ensure `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, and `SUPABASE_SERVICE_ROLE_KEY` are set (see migration `supabase/migrations/20260905000000_pixel_monitor.sql` — tables `floors` + `cubicles` with RLS `Service role full access` + `Anon can read`). Run migration via `supabase db push` or SQL editor. Toggle back to `0` to test local Map before cloud. |
-| `Zzz` not floating / no working tick | `prefers-reduced-motion: reduce` active | Intentional freeze — `globals.css:118` disables `animate-floatZ`/`animate-working`. Disable OS reduce-motion or check media query in DevTools → Rendering. |
-| `CRT` toggle not visible | flag off or CSS hidden | Toggle `/settings` → `CRT scanline overlay` writes `pixel:crt`. Inspect `main.crt::after` `repeating-linear-gradient` (`globals.css:53`). Clear `localStorage` key `pixel:crt` if stuck. |
-| `5 fakes POST → 400 { issues:[...] }` | payload missing required `project`/`kind` | Schema requires `project` (new since `monitor-store` expects it). Always send `project` and all 8-kind enums exactly (`subtask.start` not `Subtask.Start`). |
-| Plugin not sending | `.opencode/plugins` not loaded | Restart `opencode` (plugin loads on start). Verify with `opencode` log line. Check copies in **both** `Rai\.opencode\plugins\` and `~\.config\opencode\plugins\` are same version. |
-
-**Runbook triage (Sprint 1→5 path):**
-
-1. `curl http://localhost:3001/api/health` → check `uptime` > 0 / `floorsCount` grows after ingest.
-2. `curl -v POST /api/ingest` with good token — expect `200 {ok:true}`. Bad token → confirm 401 codepath works.
-3. `npm test` → `116` green proves store logic; failing store test means `monitor-store.ts` drift.
-
----
-
-## File map
-
-```
-pixel-office-monitor/
-├── PLAN.md                               # sprint plan & checklist (single source of truth — see §4)
-├── README.md                              # this file (E3.1)
-├── AGENTS.md                              # auto-generated Next.js agent rules — keep committed (next dev)
-├── package.json                           # 0.1.0 — scripts: dev/build/start/lint/test (vitest)
-├── vitest.config.mjs                      # node env, include src/**/*.{test,spec}
-├── next.config.ts                         # NextConfig (minimal)
-├── tsconfig.json                          # ES2017, jsx react-jsx, paths @/* → ./src/*
-├── .env.example                           # token + Supabase placeholder vars
-├── .env.local                             # local (gitignored) — MONITOR_TOKEN / PIXEL_MONITOR_URL / flag
-├── scripts/
-│   └── generate-assets.py                 # Python Pillow — generates all 43 PNGs
-├── supabase/
-│   └── migrations/20260905000000_pixel_monitor.sql   # floors + cubicles, RLS, indexes, prune comments
-├── public/
-│   └── sprites/
-│       ├── floor-tile.png                 # 32×32 floor carpet tile
-│       ├── wall-tile.png                  # 32×32 wall segment
-│       ├── door-tile.png                  # 32×32 door
-│       ├── cubicle-idle.png               # 64×64 cubicle frame (idle)
-│       ├── cubicle-working.png            # 64×64 cubicle frame (working glow)
-│       ├── props/                         # 23 desk prop PNGs (4–24px)
-│       │   ├── binoculars.png
-│       │   ├── blueprint-scroll.png
-│       │   ├── book-stack.png
-│       │   ├── cable-coil.png
-│       │   ├── camera.png
-│       │   ├── clipboard.png
-│       │   ├── coffee-mug.png
-│       │   ├── compass.png
-│       │   ├── globe.png
-│       │   ├── hard-hat.png
-│       │   ├── headset.png
-│       │   ├── laptop.png
-│       │   ├── magnifier.png
-│       │   ├── map.png
-│       │   ├── neural-orb.png
-│       │   ├── padlock.png
-│       │   ├── paper-stack.png
-│       │   ├── pen.png
-│       │   ├── server-rack.png
-│       │   ├── stamp.png
-│       │   ├── t-square.png
-│       │   ├── toolbox.png
-│       │   └── wrench.png
-│       └── monitors/                      # 15 monitor screen PNGs (16×8 each)
-│           ├── ai-systems.png
-│           ├── architect.png
-│           ├── automation-engineer.png
-│           ├── build.png
-│           ├── devops.png
-│           ├── documentation.png
-│           ├── explore.png
-│           ├── general.png
-│           ├── plan.png
-│           ├── project-manager.png
-│           ├── qa-engineer.png
-│           ├── researcher.png
-│           ├── scout.png
-│           ├── security-reviewer.png
-│           └── senior-engineer.png
-├── docs/
-│   ├── office-revamp.md                   # R1–R5 revamp decisions & verification
-│   └── pixel-art-assets.md                # R6–R10 asset inventory & palette reference
-└── src/
-    ├── app/
-    │   ├── layout.tsx                     # Press_Start_2P + VT323 + Inter, metadata
-    │   ├── globals.css                    # OLED tokens, pixelated, crt, floatZ/blink/pulse-live, monitor-glow, prop-float, reduced-motion
-    │   ├── page.tsx                       # SSE state, floor selection, fitted OfficeScene, settings
-    │   ├── demo/page.tsx                  # static office asset demo
-    │   ├── character-demo/page.tsx        # sprite pose/direction demo
-    │   ├── api/
-    │   │   ├── ingest/route.ts            # POST zod + 401/400/200/405 — extractToken three-header
-    │   │   ├── state/route.ts             # GET → getState() no-store
-    │   │   ├── events/route.ts            # authenticated replayable SSE + heartbeat
-    │   │   └── health/route.ts            # GET → { ok, floorsCount, uptime, timestamp }
-    │   └── settings/page.tsx              # toggles (localStorage) + reduced-motion read-only
-    ├── components/
-    │   ├── Header.tsx                     # game HUD + stream freshness status
-    │   ├── FloorSwitcher.tsx              # root-session floors, pin/rename/close/follow controls
-    │   ├── scene/OfficeScene.tsx          # current 384×256 room, actors, handoffs, monitors
-    │   ├── scene/SceneViewport.tsx        # responsive static whole-room fit
-    │   ├── scene/CharacterSprite.tsx      # 8 poses × 4 directions with per-frame timing
-    │   ├── AgentInspector.tsx             # selected actor/task detail modal
-    │   ├── FloorTabs.tsx                  # legacy tab UI
-    │   ├── OfficeGrid.tsx                 # legacy card grid
-    │   ├── CubicleCard.tsx                # legacy cubicle renderer
-    │   ├── CubicleFrame.tsx              # cubicle-idle/working.png background wrapper
-    │   ├── AgentTooltip.tsx              # hover tooltip: name, role, status, prompt/tool
-    │   ├── SpeechBubble.tsx              # prompt text bubble above sprite
-    │   ├── DeskProps.tsx                 # per-agent prop PNGs, float animation
-    │   ├── MonitorScreen.tsx             # per-agent monitor screen PNG, glow animation
-    │   ├── Sprite.tsx                    # 16×16 CSS grid, 15 agents, 200ms/1800ms, reduced-motion
-    │   ├── OfficeFloor.tsx               # floor texture wrapper (door, aisle, label)
-    │   ├── VacantCubicle.tsx             # 6 dashed vacant desks
-    │   ├── OfficeBackground.tsx          # fixed floor-tile.png repeating pattern (z-0)
-    │   └── ErrorBoundary.tsx             # class boundary, ◩ glitch fallback, Try again reset
-    └── lib/
-        ├── schema.ts                      # zod ingestPayloadSchema (v/ts/sessionID/project/agent/kind/status/detail)
-        ├── monitor-store.ts               # runtime maps, v1/v2 upsert, dedupe, event ring, SSE metrics
-        ├── monitor-types.ts               # floor/session/actor/invocation snapshot contracts
-        ├── scene/                         # layout, assets, pose derivation, routes, handoff controller
-        ├── agents.ts                      # AGENT_MAP 15 entries + INTERN fallback, getAgentMeta()
-        ├── agent-props.ts                 # AGENT_PROPS 15 agents + INTERN fallback, getAgentProps()
-        ├── format.ts                      # formatSince (s/m/h/d), formatProject, formatTitle
-        ├── supabase.ts                   # isSupabaseEnabled() flag helper + getSupabaseEnv()
-        ├── supabase/{server,client,admin}.ts    # Supabase SSR clients
-        └── __tests__/                     # 9 suites, 140 tests
-```
-
-Plugin (outside app, but part of system):
-
-```
-C:\Users\DELL\Desktop\Rai\.opencode\plugins\pixel-monitor.js   # event + tool.execute.before/after, debounce 300ms, 2s keepalive
-C:\Users\DELL\.config\opencode\plugins\pixel-monitor.js        # identical copy (user global)
-```
-
----
-
-## Env var reference (all placeholders)
-
-Never paste a real token from `API KEYS.txt`. Use `<YOUR_TOKEN>` locally and set via `.env.local` / shell. Verified vars:
-
-```
-MONITOR_TOKEN               # server-only, checked by /api/ingest
-NEXT_PUBLIC_PIXEL_MONITOR_TOKEN # browser SSE token; local-only, must match MONITOR_TOKEN
-PIXEL_MONITOR_TOKEN         # plugin, sent to server
-PIXEL_MONITOR_URL           # plugin → http://localhost:3001/api/ingest
-NEXT_PUBLIC_USE_SUPABASE    # 0/1 (or true) — Map vs Supabase
-NEXT_PUBLIC_SUPABASE_URL
-NEXT_PUBLIC_SUPABASE_ANON_KEY
-SUPABASE_SERVICE_ROLE_KEY   # server-only
-```
-
----
-
-## What was verified for these docs
-
-* **Read before documenting:** current page, SSE hook/route, monitor store/types/schema, scene layout/assets/renderers, all 9 test suites, env example, package scripts, and both current Pillow generators.
-* **Ran:** 140 tests, TypeScript clean, production build clean, lint 0 errors/24 warnings, and HTTP `200` checks for `/`, `/demo`, and `/character-demo` on port 3001.
-* **Not verified:** Supabase cloud path remains flag-off and was not tested against a live project. OpenCode plugin restart/live delegation was not repeated during this visual/doc pass.
-
----
-
-*OLED #0F172A · VT323 · Press Start 2P · Pixelated crisp · authenticated SSE · static whole-room fit · 2026-09-08*
+The installed CLI confirms that `--continue` resumes the last session. The shell-refresh pattern is verified: the inherited credential changes from rejected state401/ingest401 to state200/malformed ingest400 without creating events. Keep the separate `serve --pure` discovery server plugin-free. Do not attach the monitoring client to that pure server expecting external-plugin events.

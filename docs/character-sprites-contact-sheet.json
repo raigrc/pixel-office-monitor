@@ -1,0 +1,35 @@
+{
+  "frameWidth": 48,
+  "frameHeight": 48,
+  "columns": [
+    "down-idle",
+    "side-walk",
+    "down-work",
+    "down-success",
+    "down-error"
+  ],
+  "rows": [
+    "ai-systems",
+    "architect",
+    "automation-engineer",
+    "build",
+    "compaction",
+    "devops",
+    "documentation",
+    "explore",
+    "fallback",
+    "general",
+    "intern",
+    "orchestrator",
+    "plan",
+    "project-manager",
+    "qa-engineer",
+    "researcher",
+    "scout",
+    "security-reviewer",
+    "senior-engineer",
+    "summary",
+    "title",
+    "unknown"
+  ]
+}

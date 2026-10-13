@@ -1,6 +1,10 @@
 import * as THREE from 'three';
-import { CrewRig, Clip, createCrewRig, createBoneTexture, getClipFrame, getBoneMatrix } from './crew-rig';
-import { hexToWorld } from './hex-grid';
+import { type CrewRig, createBoneTexture, getClipFrame } from './crew-rig';
+import { AGENT_ACCESSORY_FAMILIES, type AgentAccessoryFamily } from '../agent-visual-identity';
+import { COZY_THEME } from '../cozy-theme';
+import { createCozyMaterial } from './cozy-materials';
+
+export const ASTRONAUT_INSTANCE_BOUNDS_PADDING = 2.5;
 
 export interface AstronautState {
   id: string;
@@ -10,6 +14,8 @@ export interface AstronautState {
   clipTime: number;
   frame: number;
   suitColor: THREE.Color;
+  detailColor: THREE.Color;
+  accessory: AgentAccessoryFamily;
   faceIndex: number;
   badge: string;
   working: boolean;
@@ -21,14 +27,6 @@ export interface AstronautConfig {
 }
 
 const FACE_ATLAS_SIZE = 4;
-const FACE_COUNT = FACE_ATLAS_SIZE * FACE_ATLAS_SIZE;
-
-const FACE_EXPRESSIONS = [
-  'neutral', 'happy', 'focused', 'concerned',
-  'tired', 'sleepy', 'alert', 'excited',
-  'confused', 'determined', 'bored', 'stressed',
-  'proud', 'worried', 'curious', 'calm',
-];
 
 function createFaceAtlas(): THREE.CanvasTexture {
   const size = 128;
@@ -108,8 +106,8 @@ function createFaceAtlas(): THREE.CanvasTexture {
   return texture;
 }
 
-const ASTRONAUT_VERTEX_SHADER = `
-  attribute vec3 instanceColor;
+export const ASTRONAUT_VERTEX_SHADER = `
+  attribute vec3 aSuit;
   attribute float instanceFrame;
   attribute float instanceFace;
 
@@ -119,26 +117,38 @@ const ASTRONAUT_VERTEX_SHADER = `
   varying vec3 vWorldPosition;
 
   uniform float uTime;
+  uniform float uIdleMotion;
   uniform vec3 uSunDirection;
   uniform vec3 uSunColor;
   uniform float uSunIntensity;
   uniform vec3 uAmbientColor;
   uniform float uAmbientIntensity;
+  uniform vec3 uFillDirection;
+  uniform vec3 uFillColor;
+  uniform float uFillIntensity;
 
   void main() {
-    vColor = instanceColor;
+    vColor = aSuit;
     vFaceUV = vec2(
       mod(instanceFace, 4.0) / 4.0 + 0.125 / 4.0,
       floor(instanceFace / 4.0) / 4.0 + 0.125 / 4.0
     );
 
     vec3 pos = position;
-    float anim = sin(uTime * 2.0 + instanceFrame) * 0.05;
+    float anim = sin(uTime * 2.0 + instanceFrame) * 0.05 * uIdleMotion;
     pos.y += anim;
 
-    vec4 worldPos = modelMatrix * vec4(pos, 1.0);
+    // InstancedMesh path: every instance shares this shader, so the
+    // per-instance matrix must be applied exactly once. Without it all
+    // bodies collapse to the mesh origin while helmets/gear (standard
+    // materials) honor their instance matrices.
+    mat4 instanceTransform = mat4(1.0);
+    #ifdef USE_INSTANCING
+      instanceTransform = instanceMatrix;
+    #endif
+    vec4 worldPos = modelMatrix * instanceTransform * vec4(pos, 1.0);
     vWorldPosition = worldPos.xyz;
-    vNormal = normalize(mat3(modelMatrix) * normal);
+    vNormal = normalize(mat3(modelMatrix) * mat3(instanceTransform) * normal);
 
     gl_Position = projectionMatrix * viewMatrix * worldPos;
   }
@@ -156,6 +166,9 @@ const ASTRONAUT_FRAGMENT_SHADER = `
   uniform float uSunIntensity;
   uniform vec3 uAmbientColor;
   uniform float uAmbientIntensity;
+  uniform vec3 uFillDirection;
+  uniform vec3 uFillColor;
+  uniform float uFillIntensity;
 
   void main() {
     vec3 N = normalize(vNormal);
@@ -163,10 +176,18 @@ const ASTRONAUT_FRAGMENT_SHADER = `
     float NdotL = max(dot(N, L), 0.0);
 
     vec3 diffuse = vColor * uSunColor * NdotL * uSunIntensity;
+    // Cool night fill so bodies keep relief shading after sunset.
+    // Zero at full day; never fakes sunlight.
+    vec3 F = normalize(uFillDirection);
+    float NdotF = max(dot(N, F), 0.0);
+    diffuse += vColor * uFillColor * NdotF * uFillIntensity;
     vec3 ambient = vColor * uAmbientColor * uAmbientIntensity;
-    vec3 color = ambient + diffuse;
+    float identityFloor = mix(0.28, 0.68, smoothstep(0.0, 1.0, uSunIntensity));
+    vec3 color = max(ambient + diffuse, vColor * identityFloor);
 
     gl_FragColor = vec4(color, 1.0);
+    #include <tonemapping_fragment>
+    #include <colorspace_fragment>
   }
 `;
 
@@ -181,7 +202,7 @@ export class Astronauts {
   private backpackMesh!: THREE.InstancedMesh;
   private antennaMesh!: THREE.InstancedMesh;
   private lampMesh!: THREE.InstancedMesh;
-  private hammerMesh!: THREE.InstancedMesh;
+  private accessoryMeshes!: Record<AgentAccessoryFamily, THREE.InstancedMesh>;
 
   private maxAgents: number;
   private agentCount = 0;
@@ -198,6 +219,7 @@ export class Astronauts {
 
     this.createGeometries();
     this.createMeshes();
+    this.syncCounts();
   }
 
   private createGeometries(): void {
@@ -222,59 +244,112 @@ export class Astronauts {
     lampGeo.translate(-0.15, 2.1, 0);
     lampGeo.rotateX(-Math.PI / 2);
 
-    const hammerGeo = new THREE.BoxGeometry(0.15, 0.5, 0.15);
-    hammerGeo.translate(0.4, 1.0, 0.2);
-    hammerGeo.rotateZ(-Math.PI / 4);
-
     this.bodyMesh = new THREE.InstancedMesh(bodyGeo, this.createMaterial(), this.maxAgents);
     this.bodyMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
 
     const instanceFrame = new THREE.InstancedBufferAttribute(new Float32Array(this.maxAgents), 1);
     const instanceFace = new THREE.InstancedBufferAttribute(new Float32Array(this.maxAgents), 1);
-    const instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(this.maxAgents * 3), 3);
+    // Named aSuit on purpose. instanceColor is reserved plumbing inside
+    // three and never reaches a custom shader from a geometry attribute.
+    const suitColor = new THREE.InstancedBufferAttribute(new Float32Array(this.maxAgents * 3), 3);
     bodyGeo.setAttribute('instanceFrame', instanceFrame);
     bodyGeo.setAttribute('instanceFace', instanceFace);
-    bodyGeo.setAttribute('instanceColor', instanceColor);
+    bodyGeo.setAttribute('aSuit', suitColor);
 
-    this.helmetMesh = new THREE.InstancedMesh(helmetGeo, new THREE.MeshStandardMaterial({
-      color: 0xffffff,
-      roughness: 0.3,
-      metalness: 0.7,
-    }), this.maxAgents);
+    this.helmetMesh = new THREE.InstancedMesh(
+      helmetGeo,
+      createCozyMaterial({ recipe: 'paintedMetal', color: COZY_THEME.environment.floor }),
+      this.maxAgents,
+    );
 
-    this.visorMesh = new THREE.InstancedMesh(visorGeo, new THREE.MeshStandardMaterial({
-      color: 0x001133,
-      roughness: 0.05,
-      metalness: 0.9,
-      transparent: true,
-      opacity: 0.6,
-    }), this.maxAgents);
+    this.visorMesh = new THREE.InstancedMesh(
+      visorGeo,
+      createCozyMaterial({ recipe: 'brushedMetal', color: COZY_THEME.ui.canvas }),
+      this.maxAgents,
+    );
 
-    this.backpackMesh = new THREE.InstancedMesh(backpackGeo, new THREE.MeshStandardMaterial({
-      color: 0x222222,
-      roughness: 0.8,
-      metalness: 0.2,
-    }), this.maxAgents);
+    this.backpackMesh = new THREE.InstancedMesh(
+      backpackGeo,
+      createCozyMaterial({ recipe: 'matte', color: COZY_THEME.environment.floor }),
+      this.maxAgents,
+    );
 
-    this.antennaMesh = new THREE.InstancedMesh(antennaGeo, new THREE.MeshStandardMaterial({
-      color: 0x444444,
-      roughness: 0.5,
-      metalness: 0.5,
-    }), this.maxAgents);
+    this.antennaMesh = new THREE.InstancedMesh(
+      antennaGeo,
+      createCozyMaterial({ recipe: 'brushedMetal', color: COZY_THEME.environment.metal }),
+      this.maxAgents,
+    );
 
-    this.lampMesh = new THREE.InstancedMesh(lampGeo, new THREE.MeshStandardMaterial({
-      color: 0xffffaa,
-      emissive: 0xffffaa,
-      emissiveIntensity: 0.5,
-      transparent: true,
-      opacity: 0.8,
-    }), this.maxAgents);
+    this.lampMesh = new THREE.InstancedMesh(
+      lampGeo,
+      createCozyMaterial({
+        recipe: 'softGlow',
+        color: COZY_THEME.environment.lamp,
+        emissive: COZY_THEME.environment.lamp,
+      }),
+      this.maxAgents,
+    );
 
-    this.hammerMesh = new THREE.InstancedMesh(hammerGeo, new THREE.MeshStandardMaterial({
-      color: 0x555555,
-      roughness: 0.7,
-      metalness: 0.3,
-    }), this.maxAgents);
+    this.accessoryMeshes = {
+      sensor: this.createAccessoryMesh('sensor', this.createAccessoryGeometry('sensor')),
+      document: this.createAccessoryMesh('document', this.createAccessoryGeometry('document')),
+      tool: this.createAccessoryMesh('tool', this.createAccessoryGeometry('tool')),
+      comms: this.createAccessoryMesh('comms', this.createAccessoryGeometry('comms')),
+      shield: this.createAccessoryMesh('shield', this.createAccessoryGeometry('shield')),
+      device: this.createAccessoryMesh('device', this.createAccessoryGeometry('device')),
+    };
+
+    this.refreshBounds();
+  }
+
+  private createAccessoryGeometry(family: AgentAccessoryFamily): THREE.BufferGeometry {
+    switch (family) {
+      case 'sensor': {
+        const geometry = new THREE.TorusGeometry(0.18, 0.045, 5, 10);
+        geometry.rotateX(Math.PI / 2);
+        geometry.translate(0.38, 1.46, 0.25);
+        return geometry;
+      }
+      case 'document': {
+        const geometry = new THREE.BoxGeometry(0.34, 0.44, 0.055);
+        geometry.rotateZ(-Math.PI / 8);
+        geometry.translate(0.4, 1.25, 0.27);
+        return geometry;
+      }
+      case 'tool': {
+        const geometry = new THREE.CylinderGeometry(0.055, 0.075, 0.56, 6);
+        geometry.rotateZ(-Math.PI / 4);
+        geometry.translate(0.42, 1.16, 0.24);
+        return geometry;
+      }
+      case 'comms': {
+        const geometry = new THREE.TorusGeometry(0.2, 0.05, 5, 10, Math.PI * 1.35);
+        geometry.rotateY(Math.PI / 2);
+        geometry.translate(0.27, 1.84, 0.02);
+        return geometry;
+      }
+      case 'shield': {
+        const geometry = new THREE.CircleGeometry(0.27, 6);
+        geometry.scale(0.82, 1.15, 1);
+        geometry.translate(-0.36, 1.3, 0.31);
+        return geometry;
+      }
+      case 'device': {
+        const geometry = new THREE.BoxGeometry(0.42, 0.3, 0.075);
+        geometry.rotateZ(-Math.PI / 10);
+        geometry.translate(0.38, 1.2, 0.3);
+        return geometry;
+      }
+    }
+  }
+
+  private createAccessoryMesh(family: AgentAccessoryFamily, geometry: THREE.BufferGeometry): THREE.InstancedMesh {
+    const material = createCozyMaterial({ recipe: 'paintedMetal', color: COZY_THEME.ui.text });
+    material.side = THREE.DoubleSide;
+    const mesh = new THREE.InstancedMesh(geometry, material, this.maxAgents);
+    mesh.name = `role-accessory-${family}`;
+    mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+    return mesh;
   }
 
   private createMaterial(): THREE.ShaderMaterial {
@@ -283,11 +358,15 @@ export class Astronauts {
       fragmentShader: ASTRONAUT_FRAGMENT_SHADER,
       uniforms: {
         uTime: { value: 0 },
+        uIdleMotion: { value: 1 },
         uSunDirection: { value: new THREE.Vector3(0, 1, 0) },
-        uSunColor: { value: new THREE.Color(0xffffee) },
+        uSunColor: { value: new THREE.Color(COZY_THEME.ui.text) },
         uSunIntensity: { value: 1 },
-        uAmbientColor: { value: new THREE.Color(0x333344) },
+        uAmbientColor: { value: new THREE.Color(COZY_THEME.scene.terraSky.nightAmbient) },
         uAmbientIntensity: { value: 0.5 },
+        uFillDirection: { value: new THREE.Vector3(-0.5, 0.75, -0.25).normalize() },
+        uFillColor: { value: new THREE.Color(COZY_THEME.scene.terraSky.nightFill) },
+        uFillIntensity: { value: 0 },
       },
     });
 
@@ -298,16 +377,23 @@ export class Astronauts {
     // Meshes created in createGeometries
   }
 
-  addAgent(agent: AstronautState): void {
-    if (this.agentCount >= this.maxAgents) return;
+  addAgent(agent: AstronautState): boolean {
+    if (this.agents.has(agent.id)) {
+      this.updateAgent(agent.id, agent);
+      return true;
+    }
+    if (this.agentCount >= this.maxAgents) return false;
     this.agents.set(agent.id, agent);
     this.updateInstance(agent);
     this.agentCount++;
+    this.syncCounts();
+    return true;
   }
 
   removeAgent(id: string): void {
     this.agents.delete(id);
     this.rebuildInstances();
+    this.syncCounts();
   }
 
   updateAgent(id: string, updates: Partial<AstronautState>): void {
@@ -320,7 +406,10 @@ export class Astronauts {
   private updateInstance(agent: AstronautState): void {
     const index = Array.from(this.agents.keys()).indexOf(agent.id);
     if (index === -1) return;
+    this.writeInstanceAt(agent, index);
+  }
 
+  private writeInstanceAt(agent: AstronautState, index: number): void {
     this.dummy.position.copy(agent.position);
     this.dummy.rotation.y = Math.atan2(
       agent.target.x - agent.position.x,
@@ -334,9 +423,20 @@ export class Astronauts {
     this.backpackMesh.setMatrixAt(index, this.dummy.matrix);
     this.antennaMesh.setMatrixAt(index, this.dummy.matrix);
     this.lampMesh.setMatrixAt(index, this.dummy.matrix);
-    this.hammerMesh.setMatrixAt(index, this.dummy.matrix);
+    this.backpackMesh.setColorAt(index, agent.detailColor);
 
-    const colorArray = this.bodyMesh.instanceColor as THREE.InstancedBufferAttribute;
+    for (const family of AGENT_ACCESSORY_FAMILIES) {
+      const mesh = this.accessoryMeshes[family];
+      this.dummy.scale.setScalar(family === agent.accessory ? 1 : 0);
+      this.dummy.updateMatrix();
+      mesh.setMatrixAt(index, this.dummy.matrix);
+      mesh.setColorAt(index, agent.detailColor);
+      mesh.instanceMatrix.needsUpdate = true;
+      if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
+    }
+    this.dummy.scale.setScalar(1);
+
+    const colorArray = this.bodyMesh.geometry.getAttribute('aSuit') as THREE.InstancedBufferAttribute | undefined;
     if (colorArray) {
       colorArray.setXYZ(index, agent.suitColor.r, agent.suitColor.g, agent.suitColor.b);
       colorArray.needsUpdate = true;
@@ -358,31 +458,50 @@ export class Astronauts {
     this.helmetMesh.instanceMatrix.needsUpdate = true;
     this.visorMesh.instanceMatrix.needsUpdate = true;
     this.backpackMesh.instanceMatrix.needsUpdate = true;
+    if (this.backpackMesh.instanceColor) this.backpackMesh.instanceColor.needsUpdate = true;
     this.antennaMesh.instanceMatrix.needsUpdate = true;
     this.lampMesh.instanceMatrix.needsUpdate = true;
-    this.hammerMesh.instanceMatrix.needsUpdate = true;
   }
 
+  /**
+   * Full survivor rewrite. Agent count caps at 64, so every surviving
+   * agent is rewritten to slot 0..count-1 after any removal. Index-diff
+   * bookkeeping cannot work here because updateInstance derives the slot
+   * from current Map order, which already shifted after the delete.
+   */
   private rebuildInstances(): void {
     let index = 0;
     for (const agent of this.agents.values()) {
-      const prevIndex = Array.from(this.agents.keys()).indexOf(agent.id);
-      if (prevIndex !== index) {
-        this.updateInstance(agent);
-      }
+      this.writeInstanceAt(agent, index);
       index++;
     }
     this.agentCount = this.agents.size;
   }
 
+  /** Hide unfilled instances. Without this, idle slots render at origin. */
+  private syncCounts(): void {
+    this.bodyMesh.count = this.agentCount;
+    this.helmetMesh.count = this.agentCount;
+    this.visorMesh.count = this.agentCount;
+    this.backpackMesh.count = this.agentCount;
+    this.antennaMesh.count = this.agentCount;
+    this.lampMesh.count = this.agentCount;
+    for (const mesh of Object.values(this.accessoryMeshes)) mesh.count = this.agentCount;
+  }
+
   update(time: number, dt: number): void {
+    const frameArray = this.bodyMesh.geometry.getAttribute('instanceFrame') as THREE.InstancedBufferAttribute;
+    let index = 0;
     for (const agent of this.agents.values()) {
       agent.clipTime += dt;
       const clip = this.rig.clips.get(agent.clip);
       if (clip) {
         agent.frame = getClipFrame(this.rig, agent.clip, agent.clipTime);
       }
+      frameArray.setX(index, agent.frame);
+      index++;
     }
+    frameArray.needsUpdate = true;
   }
 
   setUniforms(uniforms: {
@@ -392,6 +511,9 @@ export class Astronauts {
     uSunIntensity?: number;
     uAmbientColor?: THREE.Color;
     uAmbientIntensity?: number;
+    uFillDirection?: THREE.Vector3;
+    uFillColor?: THREE.Color;
+    uFillIntensity?: number;
   }): void {
     if (uniforms.uTime !== undefined) this.material.uniforms.uTime.value = uniforms.uTime;
     if (uniforms.uSunDirection) this.material.uniforms.uSunDirection.value.copy(uniforms.uSunDirection);
@@ -399,6 +521,13 @@ export class Astronauts {
     if (uniforms.uSunIntensity !== undefined) this.material.uniforms.uSunIntensity.value = uniforms.uSunIntensity;
     if (uniforms.uAmbientColor) this.material.uniforms.uAmbientColor.value.copy(uniforms.uAmbientColor);
     if (uniforms.uAmbientIntensity !== undefined) this.material.uniforms.uAmbientIntensity.value = uniforms.uAmbientIntensity;
+    if (uniforms.uFillDirection) this.material.uniforms.uFillDirection.value.copy(uniforms.uFillDirection);
+    if (uniforms.uFillColor) this.material.uniforms.uFillColor.value.copy(uniforms.uFillColor);
+    if (uniforms.uFillIntensity !== undefined) this.material.uniforms.uFillIntensity.value = uniforms.uFillIntensity;
+  }
+
+  setReducedMotion(enabled: boolean): void {
+    this.material.uniforms.uIdleMotion.value = enabled ? 0 : 1;
   }
 
   getMeshes(): THREE.InstancedMesh[] {
@@ -409,12 +538,34 @@ export class Astronauts {
       this.backpackMesh,
       this.antennaMesh,
       this.lampMesh,
-      this.hammerMesh,
+      ...Object.values(this.accessoryMeshes),
     ];
+  }
+
+  getPickMeshes(): THREE.InstancedMesh[] {
+    return [this.bodyMesh, this.helmetMesh, this.visorMesh, this.backpackMesh, this.antennaMesh, this.lampMesh];
+  }
+
+  getAccessoryMeshes(): Readonly<Record<AgentAccessoryFamily, THREE.InstancedMesh>> {
+    return this.accessoryMeshes;
   }
 
   getAgentCount(): number {
     return this.agentCount;
+  }
+
+  refreshBounds(): void {
+    const bounds = new THREE.Box3();
+    for (const agent of this.agents.values()) bounds.expandByPoint(agent.position);
+    const sphere = new THREE.Sphere();
+    if (bounds.isEmpty()) {
+      sphere.center.set(0, 1.2, 0);
+      sphere.radius = 0;
+    } else {
+      bounds.getBoundingSphere(sphere);
+      sphere.radius += ASTRONAUT_INSTANCE_BOUNDS_PADDING;
+    }
+    for (const mesh of this.getMeshes()) mesh.boundingSphere = sphere;
   }
 
   getAgent(id: string): AstronautState | undefined {
@@ -462,11 +613,10 @@ export class Astronauts {
     } else {
       this.lampMesh.material.dispose();
     }
-    this.hammerMesh.geometry.dispose();
-    if (Array.isArray(this.hammerMesh.material)) {
-      this.hammerMesh.material.forEach((m) => m.dispose());
-    } else {
-      this.hammerMesh.material.dispose();
+    for (const mesh of Object.values(this.accessoryMeshes)) {
+      mesh.geometry.dispose();
+      if (Array.isArray(mesh.material)) mesh.material.forEach((material) => material.dispose());
+      else mesh.material.dispose();
     }
     this.boneTexture.dispose();
     this.faceAtlas.dispose();

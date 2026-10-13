@@ -5,21 +5,25 @@ import { motion } from "motion/react";
 import Image from "next/image";
 import CharacterSprite from "./CharacterSprite";
 import DeskDecor from "./DeskDecor";
+import OfficeEnvironment from "./OfficeEnvironment";
 import { useCameraZoom } from "./SceneViewport";
-import { getActorActivityPose, getActorBusyCount } from "@/lib/scene/actor-pose";
-import { TILE_SIZE, OFFICE_DIMENSIONS, DESK_ANCHORS, getDeskAnchor, LAYERS, ORCHESTRATOR_SPOT } from "@/lib/scene/office-layout";
+import { actorActiveWorkCount, actorPose, type ActivityModel } from "@/lib/activity/activity-model";
+import { OFFICE_DIMENSIONS, getDeskAnchor, LAYERS, ORCHESTRATOR_SPOT } from "@/lib/scene/office-layout";
 import { STANDING_ADMIN } from "@/lib/scene/roster";
 import { getAssetUrl } from "@/lib/scene/assets";
 import { useDayNight } from "@/lib/scene/day-night";
-import type { ActorInfo, FloorInfo, InvocationInfo } from "@/lib/monitor-types";
-import type { VisualHandoffState } from "@/lib/scene/presentation";
+import { getActorHitTarget } from "@/lib/scene/hit-target";
+import { getSessionAccentProperties } from "@/lib/session-visual-identity";
+import type { ActorInfo, FloorInfo } from "@/lib/monitor-types";
+import type { VisualActorPoseState, VisualHandoffState } from "@/lib/scene/presentation";
 
 interface OfficeSceneProps {
   floors: FloorInfo[];
   actors: ActorInfo[];
-  invocations: InvocationInfo[];
   activeFloorId: string | null;
   handoffStates?: VisualHandoffState[];
+  actorPoseStates?: VisualActorPoseState[];
+  activity: ActivityModel;
   onCubicleClick?: (actor: ActorInfo) => void;
   scale?: number;
 }
@@ -27,9 +31,10 @@ interface OfficeSceneProps {
 export default function OfficeScene({
   floors,
   actors,
-  invocations,
   activeFloorId,
   handoffStates = [],
+  actorPoseStates = [],
+  activity,
   onCubicleClick,
   scale = 1,
 }: OfficeSceneProps) {
@@ -48,10 +53,14 @@ export default function OfficeScene({
       const prev = bySeat.get(a.seatIndex);
       if (!prev || a.lastObservedAt >= prev.lastObservedAt) bySeat.set(a.seatIndex, a);
     }
-    return Array.from(bySeat.values());
+    return Array.from(bySeat.values()).sort((a, b) => a.seatIndex - b.seatIndex);
   }, [actors, activeFloor?.floorId]);
 
   const floorActors = seatedActors;
+  const visibleDeskEntries = useMemo(
+    () => floorActors.map((actor) => [actor.seatIndex, getDeskAnchor(actor.seatIndex)] as const),
+    [floorActors]
+  );
 
   const adminActors = useMemo(
     () => actors.filter((a) => a.floorId === activeFloor?.floorId && a.agentKey === STANDING_ADMIN),
@@ -69,9 +78,9 @@ export default function OfficeScene({
   // Viewport zoom — labels divide world sizes by net zoom so glyphs stay ~10 screen px.
   const viewZoom = useCameraZoom();
   const netZoom = Math.max(0.5, scale * viewZoom);
-  // Day-night phase from client clock (06–18 day). No toggle per spec.
-  const dayNight = useDayNight();
-  const isNight = dayNight === "night";
+  const timeStage = useDayNight();
+  const isDusk = timeStage === "dusk";
+  const isNight = timeStage === "night";
 
   if (!activeFloor) {
     return (
@@ -81,9 +90,9 @@ export default function OfficeScene({
         role="img"
         aria-label="No active floor"
       >
-        <div className="text-center text-[#64748B]">
+        <div className="text-center text-[var(--muted)]">
           <p style={{ fontFamily: "var(--font-vt), VT323, monospace", fontSize: "16px" }}>
-            ◧ no active floor
+            No active floor
           </p>
         </div>
       </div>
@@ -92,115 +101,17 @@ export default function OfficeScene({
 
   return (
     <div
-      className="relative"
+      className={`relative time-stage-${timeStage}`}
       style={{
+        ...getSessionAccentProperties(activeFloor.floorId),
         width: OFFICE_DIMENSIONS.width * scale,
         height: OFFICE_DIMENSIONS.height * scale,
       }}
-      role="img"
+      role="group"
       aria-label={`Office floor: ${activeFloor.title}`}
+      data-time-stage={timeStage}
     >
-      <div className="absolute inset-0" style={{ zIndex: LAYERS.floor }}>
-        <div
-          className="absolute inset-0"
-          style={{
-            backgroundColor: "#D8C8A7",
-            backgroundImage: [
-              "linear-gradient(rgba(99, 78, 48, 0.12) 1px, transparent 1px)",
-              "linear-gradient(90deg, rgba(99, 78, 48, 0.12) 1px, transparent 1px)",
-              "radial-gradient(circle at 5px 6px, rgba(255, 255, 255, 0.2) 0 1px, transparent 1px)",
-            ].join(", "),
-            backgroundRepeat: "repeat",
-            backgroundSize: `${TILE_SIZE}px ${TILE_SIZE}px`,
-            imageRendering: "pixelated",
-          }}
-        />
-      </div>
-
-      <div className="absolute inset-0" style={{ zIndex: LAYERS.rearWalls }}>
-        <div
-          className="absolute left-0 top-0 w-full"
-          style={{ height: TILE_SIZE, backgroundImage: `url(${getAssetUrl("tiles", "wall-north")})`, backgroundRepeat: "repeat-x", imageRendering: "pixelated" }}
-        />
-        <div
-          className="absolute left-0 bottom-0 w-full"
-          style={{ height: TILE_SIZE, backgroundImage: `url(${getAssetUrl("tiles", "wall-south")})`, backgroundRepeat: "repeat-x", imageRendering: "pixelated" }}
-        />
-        <div
-          className="absolute left-0 top-0 h-full"
-          style={{ width: TILE_SIZE, backgroundImage: `url(${getAssetUrl("tiles", "wall-west")})`, backgroundRepeat: "repeat-y", imageRendering: "pixelated" }}
-        />
-        <div
-          className="absolute right-0 top-0 h-full"
-          style={{ width: TILE_SIZE, backgroundImage: `url(${getAssetUrl("tiles", "wall-east")})`, backgroundRepeat: "repeat-y", imageRendering: "pixelated" }}
-        />
-
-        <div
-          className="absolute"
-          style={{
-            left: 80,
-            top: 0,
-            width: 16,
-            height: 32,
-            backgroundImage: `url(${getAssetUrl("tiles", "door-closed")})`,
-            imageRendering: "pixelated",
-          }}
-        />
-        {/* Windows: sky color follows clock. Day = warm sky, night = dark + moon. */}
-        {[144, 240].map((wx) => (
-          <div
-            key={`window-${wx}`}
-            className="absolute"
-            style={{
-              left: wx,
-              top: 0,
-              width: 32,
-              height: 16,
-              backgroundColor: isNight ? "#0B1220" : "#BAE6FD",
-              border: "2px solid #334155",
-              imageRendering: "pixelated",
-              transition: "background-color 900ms var(--ease-out)",
-            }}
-            aria-hidden="true"
-          >
-            {!isNight ? (
-              <div
-                style={{
-                  position: "absolute",
-                  left: 18,
-                  top: 3,
-                  width: 6,
-                  height: 6,
-                  backgroundColor: "#FDE68A",
-                  borderRadius: 0,
-                }}
-              />
-            ) : (
-              <div
-                style={{
-                  position: "absolute",
-                  left: 19,
-                  top: 2,
-                  width: 5,
-                  height: 5,
-                  backgroundColor: "#E2E8F0",
-                  boxShadow: "0 0 4px rgba(226,232,240,0.9)",
-                }}
-              />
-            )}
-            <div
-              style={{
-                position: "absolute",
-                left: 15,
-                top: 0,
-                width: 2,
-                height: 16,
-                backgroundColor: "#334155",
-              }}
-            />
-          </div>
-        ))}
-      </div>
+      <OfficeEnvironment scale={scale} timeStage={timeStage} />
 
       <div
         className="absolute inset-0"
@@ -209,23 +120,26 @@ export default function OfficeScene({
           position: "relative",
         }}
       >
-        {Object.entries(DESK_ANCHORS).map(([indexStr, desk]) => {
-          const index = parseInt(indexStr, 10);
+        {visibleDeskEntries.map(([index, desk]) => {
           const actorAtDesk = floorActors.find((a) => a.seatIndex === index);
-          const isOccupied = !!actorAtDesk;
-          const deskPose = actorAtDesk ? getActorActivityPose(actorAtDesk, invocations) : "idle";
+          const deskPose = actorAtDesk ? actorPose(activity, actorAtDesk.actorId) : "idle";
           // Lamp rule: on while working, celebrating a finish, or pending —
           // off when the desk sleeps. Roster desks are permanent; activity,
           // not occupancy, drives the lamp.
           const lampOn = deskPose === "work" || deskPose === "success" || deskPose === "seat";
           const isAwakeAtDesk = deskPose === "work" || deskPose === "success";
-          // Monitor glows only while its agent works — a pulsing idle screen
-          // teaches the eye to ignore the one signal that matters.
+          // Only active work pulses; success keeps a static afterglow.
           const isWorkingAtDesk = deskPose === "work";
+          const monitorGlowColor = isWorkingAtDesk
+            ? "var(--working)"
+            : deskPose === "success"
+              ? "var(--success)"
+              : "var(--monitor-idle)";
 
           return (
             <div
               key={`desk-${index}`}
+              data-office-desk={actorAtDesk?.agentKey}
               className="absolute"
               style={{
                 left: desk.furnitureOrigin.x * scale,
@@ -249,16 +163,16 @@ export default function OfficeScene({
                   top: 0,
                   imageRendering: "pixelated",
                 }}
-                // Whole room is always above the fold (static fit camera):
-                // eager everywhere, preload only for occupied desks.
+                // Whole room is always above the fold in the static fit camera.
                 loading="eager"
-                priority={isOccupied}
+                unoptimized
               />
               <Image
                 src={getAssetUrl("furniture", "monitor-base")}
                 alt=""
                 width={16}
                 height={16}
+                unoptimized
                 className="absolute"
                 style={{
                   left: desk.propAnchors.monitor.x * scale - desk.furnitureOrigin.x * scale,
@@ -266,9 +180,7 @@ export default function OfficeScene({
                   imageRendering: "pixelated",
                 }}
               />
-              {/* Monitor back-bleed: light escapes upward onto the desk behind
-                  it. Awake desks (working, celebrating, pending) bleed faint
-                  by day and strong by night; sleeping desks stay dark. */}
+              {/* Monitor back-bleed stays secondary to the screen state. */}
               {(isAwakeAtDesk || deskPose === "seat") && (
                 <div
                   aria-hidden="true"
@@ -278,13 +190,7 @@ export default function OfficeScene({
                     top: (desk.propAnchors.monitor.y - 18) * scale - desk.furnitureOrigin.y * scale,
                     width: 44 * scale,
                     height: 30 * scale,
-                    background: isAwakeAtDesk
-                      ? isNight
-                        ? "radial-gradient(ellipse at 50% 78%, rgba(34,197,94,0.4) 0%, rgba(34,197,94,0.14) 50%, transparent 72%)"
-                        : "radial-gradient(ellipse at 50% 78%, rgba(34,197,94,0.16) 0%, rgba(34,197,94,0.06) 50%, transparent 72%)"
-                      : isNight
-                        ? "radial-gradient(ellipse at 50% 78%, rgba(148,197,255,0.28) 0%, rgba(148,197,255,0.1) 50%, transparent 72%)"
-                        : "radial-gradient(ellipse at 50% 78%, rgba(148,197,255,0.12) 0%, transparent 70%)",
+                    background: `radial-gradient(ellipse at 50% 78%, color-mix(in srgb, ${monitorGlowColor} ${isAwakeAtDesk ? 32 : 24}%, transparent) 0%, transparent 70%)`,
                     transition: "opacity 900ms var(--ease-out)",
                   }}
                 />
@@ -295,9 +201,10 @@ export default function OfficeScene({
                   : isAwakeAtDesk || deskPose === "seat"
                     ? getAssetUrl("furniture", "monitor-screen")
                     : getAssetUrl("furniture", "monitor-screen-off")}
-                alt={actorAtDesk ? `${actorAtDesk.agentKey} monitor` : ""}
+                alt=""
                 width={16}
                 height={8}
+                unoptimized
                 className={isWorkingAtDesk ? "absolute monitor-working" : "absolute"}
                 style={{
                   left: desk.propAnchors.monitor.x * scale - desk.furnitureOrigin.x * scale,
@@ -306,9 +213,9 @@ export default function OfficeScene({
                   imageRendering: "pixelated",
                   opacity: isWorkingAtDesk ? (isNight ? 1 : 0.92) : isAwakeAtDesk || deskPose === "seat" ? 0.9 : 0.8,
                   filter: isWorkingAtDesk
-                    ? isNight
-                      ? "brightness(1.45) drop-shadow(0 0 8px rgba(74,222,128,1))"
-                      : "brightness(1.12) drop-shadow(0 0 3px rgba(74,222,128,0.5))"
+                      ? isNight
+                        ? "brightness(1.25) drop-shadow(0 0 4px var(--working))"
+                        : "brightness(1.08)"
                     : isAwakeAtDesk || deskPose === "seat"
                       ? isNight
                         ? "brightness(1.25)"
@@ -321,6 +228,7 @@ export default function OfficeScene({
                 alt=""
                 width={16}
                 height={24}
+                unoptimized
                 className="absolute"
                 style={{
                   left: desk.propAnchors.plant.x * scale - desk.furnitureOrigin.x * scale,
@@ -328,26 +236,12 @@ export default function OfficeScene({
                   imageRendering: "pixelated",
                 }}
               />
-              {/* Lamp halo: only while awake (faint by day via 0.35 layer, full by night). */}
-              {isNight && lampOn && (
-                <div
-                  aria-hidden="true"
-                  className="absolute pointer-events-none lamp-glow"
-                  style={{
-                    left: (desk.propAnchors.lamp.x - 12) * scale - desk.furnitureOrigin.x * scale,
-                    top: (desk.propAnchors.lamp.y - 10) * scale - desk.furnitureOrigin.y * scale,
-                    width: 32 * scale,
-                    height: 32 * scale,
-                    background:
-                      "radial-gradient(circle, rgba(251,191,36,0.4) 0%, rgba(251,191,36,0.15) 45%, transparent 70%)",
-                  }}
-                />
-              )}
               <Image
                 src={getAssetUrl("furniture", "lamp")}
                 alt=""
                 width={8}
                 height={16}
+                unoptimized
                 className="absolute"
                 style={{
                   left: desk.propAnchors.lamp.x * scale - desk.furnitureOrigin.x * scale,
@@ -356,7 +250,7 @@ export default function OfficeScene({
                   filter: !lampOn
                     ? "brightness(0.65)"
                     : isNight
-                      ? "brightness(1.5) drop-shadow(0 0 6px rgba(253,230,138,1))"
+                      ? "brightness(1.25) drop-shadow(0 0 3px var(--lamp))"
                       : "brightness(1)",
                   transition: "filter 900ms var(--ease-out)",
                 }}
@@ -373,60 +267,6 @@ export default function OfficeScene({
           );
         })}
 
-        {/* Decor strip below the third row (room is 384 tall now). */}
-        <div
-          className="absolute"
-          style={{
-            left: 16 * scale,
-            top: 304 * scale,
-            width: 32 * scale,
-            height: 64 * scale,
-          }}
-        >
-          <Image
-            src={getAssetUrl("furniture", "storage")}
-            alt="Storage cabinet"
-            width={32}
-            height={64}
-            style={{ imageRendering: "pixelated" }}
-          />
-        </div>
-
-        <div
-          className="absolute"
-          style={{
-            left: 64 * scale,
-            top: 320 * scale,
-            width: 48 * scale,
-            height: 32 * scale,
-          }}
-        >
-          <Image
-            src={getAssetUrl("furniture", "whiteboard")}
-            alt="Whiteboard"
-            width={48}
-            height={32}
-            style={{ imageRendering: "pixelated" }}
-          />
-        </div>
-
-        <div
-          className="absolute"
-          style={{
-            left: 128 * scale,
-            top: 328 * scale,
-            width: 16 * scale,
-            height: 24 * scale,
-          }}
-        >
-          <Image
-            src={getAssetUrl("furniture", "coffee-machine")}
-            alt="Coffee machine"
-            width={16}
-            height={24}
-            style={{ imageRendering: "pixelated" }}
-          />
-        </div>
       </div>
 
       <div className="absolute inset-0" style={{ zIndex: LAYERS.actors }}>
@@ -436,7 +276,7 @@ export default function OfficeScene({
 
           let position = { x: desk.seatedActorAnchor.x * scale, y: desk.seatedActorAnchor.y * scale };
           let facing: "up" | "down" | "left" | "right" = "down";
-          let pose: VisualHandoffState["senderPose"] = getActorActivityPose(actor, invocations);
+          let pose: VisualHandoffState["senderPose"] = actorPoseStates.find((state) => state.actorId === actor.actorId)?.pose ?? actorPose(activity, actor.actorId);
 
           if (handoff && handoff.senderActorId === actor.actorId) {
             position = { x: handoff.senderPosition.x * scale, y: handoff.senderPosition.y * scale };
@@ -448,8 +288,29 @@ export default function OfficeScene({
             pose = handoff.recipientPose;
           }
 
+          const hitTarget = getActorHitTarget(position, scale, viewZoom);
+
           return (
             <div key={actor.actorId} className="absolute inset-0 pointer-events-none">
+              <div
+                className="absolute"
+                role="button"
+                data-office-actor={actor.actorId}
+                tabIndex={0}
+                aria-label={`${actor.displayName || actor.agentKey} inspector`}
+                onClick={() => onCubicleClick?.(actor)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter" || event.key === " ") onCubicleClick?.(actor);
+                }}
+                style={{
+                  left: hitTarget.left,
+                  top: hitTarget.top,
+                  width: hitTarget.size,
+                  height: hitTarget.size,
+                  cursor: "pointer",
+                  pointerEvents: "auto",
+                }}
+              />
               <CharacterSprite
                 actorId={actor.actorId}
                 agentKey={actor.agentKey}
@@ -457,6 +318,7 @@ export default function OfficeScene({
                 facing={facing}
                 pose={pose}
                 scale={scale}
+                decorative
               />
               {/* Zzz only when truly sleeping. Pending (seat) stays awake. */}
               {pose === "idle" && (
@@ -468,8 +330,8 @@ export default function OfficeScene({
                     top: position.y - 52 * scale,
                     width: 36 / netZoom,
                     fontFamily: "var(--font-pixel), monospace",
-                    color: "#7DD3FC",
-                    textShadow: `0 0 ${1 / netZoom}px #0B1220, ${1 / netZoom}px ${1 / netZoom}px 0 #0B1220`,
+                    color: "var(--monitor-idle)",
+                    textShadow: `0 0 ${1 / netZoom}px var(--canvas), ${1 / netZoom}px ${1 / netZoom}px 0 var(--canvas)`,
                     textAlign: "center",
                     lineHeight: 1,
                   }}
@@ -485,13 +347,23 @@ export default function OfficeScene({
 
         {/* Standing admin by the door — oversees the floor, never seated. */}
         {adminActors.map((actor) => {
-          const position = { x: ORCHESTRATOR_SPOT.x * scale, y: ORCHESTRATOR_SPOT.y * scale };
-          const pose = getActorActivityPose(actor, invocations);
+          const handoff = handoffsOnFloor.find((state) => state.senderActorId === actor.actorId || state.recipientActorId === actor.actorId);
+          const position = handoff?.senderActorId === actor.actorId
+            ? { x: handoff.senderPosition.x * scale, y: handoff.senderPosition.y * scale }
+            : { x: ORCHESTRATOR_SPOT.x * scale, y: ORCHESTRATOR_SPOT.y * scale };
+          const basePose = actorPoseStates.find((state) => state.actorId === actor.actorId)?.pose ?? actorPose(activity, actor.actorId);
+          const pose = handoff?.senderActorId === actor.actorId
+            ? handoff.senderPose
+            : handoff?.recipientActorId === actor.actorId
+              ? handoff.recipientPose
+              : basePose;
+          const hitTarget = getActorHitTarget(position, scale, viewZoom);
           return (
             <div key={actor.actorId} className="absolute inset-0 pointer-events-none">
               <div
                 className="absolute"
                 role="button"
+                data-office-actor={actor.actorId}
                 tabIndex={0}
                 aria-label={`${actor.displayName || actor.agentKey} inspector`}
                 onClick={() => onCubicleClick?.(actor)}
@@ -499,10 +371,10 @@ export default function OfficeScene({
                   if (e.key === "Enter" || e.key === " ") onCubicleClick?.(actor);
                 }}
                 style={{
-                  left: position.x - 20 * scale,
-                  top: position.y - 40 * scale,
-                  width: 40 * scale,
-                  height: 44 * scale,
+                  left: hitTarget.left,
+                  top: hitTarget.top,
+                  width: hitTarget.size,
+                  height: hitTarget.size,
                   cursor: "pointer",
                   pointerEvents: "auto",
                 }}
@@ -511,9 +383,10 @@ export default function OfficeScene({
                 actorId={actor.actorId}
                 agentKey={actor.agentKey}
                 position={position}
-                facing="down"
+                facing={handoff?.senderActorId === actor.actorId ? handoff.senderFacing : "down"}
                 pose={pose}
                 scale={scale}
+                decorative
               />
             </div>
           );
@@ -546,6 +419,7 @@ export default function OfficeScene({
                 alt="Task handoff"
                 width={8}
                 height={8}
+                unoptimized
                 style={{ imageRendering: "pixelated" }}
               />
             </motion.div>
@@ -561,8 +435,8 @@ export default function OfficeScene({
         style={{ zIndex: LAYERS.taskToken }}
         aria-hidden="true"
       >
-        {invocations
-          .filter((inv) => inv.executionStatus === "requested" || inv.executionStatus === "started")
+        {activity.directDelegations
+          .filter((inv) => inv.floorId === activeFloor.floorId)
           .map((inv) => {
             const sender = actors.find((a) => a.actorId === inv.senderActorId);
             const recipient = actors.find((a) => a.actorId === inv.recipientActorId);
@@ -579,7 +453,7 @@ export default function OfficeScene({
               : recipient.agentKey === STANDING_ADMIN
                 ? ORCHESTRATOR_SPOT
                 : rDesk.seatedActorAnchor;
-            const started = inv.executionStatus === "started";
+            const started = inv.lifecycle === "started";
             return (
               <line
                 key={`delegation-${inv.invocationId}`}
@@ -587,7 +461,7 @@ export default function OfficeScene({
                 y1={(sPos.y - 28) * scale}
                 x2={rPos.x * scale}
                 y2={(rPos.y - 28) * scale}
-                stroke={started ? "#3B82F6" : "#64748B"}
+                stroke={started ? "var(--delegation-active)" : "var(--delegation-pending)"}
                 strokeWidth={Math.max(1, scale)}
                 strokeDasharray={`${4 * scale} ${3 * scale}`}
                 opacity={started ? 0.9 : 0.5}
@@ -600,52 +474,56 @@ export default function OfficeScene({
       </svg>
 
       <div className="absolute inset-0 pointer-events-none" style={{ zIndex: LAYERS.foreground }}>
-        {Object.entries(DESK_ANCHORS).map(([indexStr, desk]) => (
+        {visibleDeskEntries.map(([index, desk]) => (
           <Image
-            key={`desk-front-${indexStr}`}
+            key={`desk-front-${index}`}
             src={getAssetUrl("furniture", "desk-front")}
             alt=""
             width={64}
             height={32}
+            unoptimized
             className="absolute"
             style={{
               left: desk.furnitureOrigin.x * scale,
-              // Front top 36 below origin: character rows 0-20 stay visible
-              // (head + shoulders + hands), rows 20-32 tuck behind (seated legs).
+                  // Front top 36 below origin: 48px character rows 0-33 stay visible
+                  // (head + shoulders + hands), lower seated rows tuck behind.
               // Front bottom stays clear of the y128 walk lane on both rows.
               top: (desk.furnitureOrigin.y + 36) * scale,
               imageRendering: "pixelated",
-              filter: isNight ? "brightness(0.72)" : undefined,
+              filter: isNight ? "brightness(0.78)" : isDusk ? "brightness(0.9)" : undefined,
               transition: "filter 900ms var(--ease-out)",
             }}
           />
         ))}
       </div>
 
-      {/* Night tint: darkens room. Lights render ABOVE it so they truly spill. */}
+      {/* Dusk and night tint preserve room detail. Lights render above it. */}
       <div
         aria-hidden="true"
         className="absolute inset-0 pointer-events-none daynight-tint"
         style={{
           zIndex: LAYERS.foreground + 1,
-          backgroundColor: "#0B1220",
-          opacity: isNight ? 0.45 : 0,
+          backgroundColor: "var(--night)",
+          opacity: isNight ? 0.28 : isDusk ? 0.12 : 0,
         }}
       />
-      {/* Light layer: additive spill above tint (screen blend).
-          Monitor bleed goes BEHIND the monitor (upward, away from camera) —
-          we see the back of the monitor. Day renders faint, night strong. */}
+      {/* Restrained additive spill above tint. */}
       {
         <div
           aria-hidden="true"
           className="absolute inset-0 pointer-events-none"
-          style={{ zIndex: LAYERS.foreground + 2, opacity: isNight ? 1 : 0.35, transition: "opacity 900ms var(--ease-out)" }}
+          style={{ zIndex: LAYERS.foreground + 2, opacity: isNight ? 0.78 : isDusk ? 0.48 : 0.18, transition: "opacity 900ms var(--ease-out)" }}
         >
-          {Object.entries(DESK_ANCHORS).map(([indexStr, desk]) => {
-            const index = parseInt(indexStr, 10);
+          {visibleDeskEntries.map(([index, desk]) => {
             const actorAtDesk = floorActors.find((a) => a.seatIndex === index);
-            const deskPose = actorAtDesk ? getActorActivityPose(actorAtDesk, invocations) : "idle";
+            const deskPose = actorAtDesk ? actorPose(activity, actorAtDesk.actorId) : "idle";
             const isAwakeAtDesk = deskPose === "work" || deskPose === "success";
+            const isWorkingAtDesk = deskPose === "work";
+            const monitorGlowColor = isWorkingAtDesk
+              ? "var(--working)"
+              : deskPose === "success"
+                ? "var(--success)"
+                : "var(--monitor-idle)";
             // Lamp rule: on while working, celebrating, or pending — off asleep.
             const lampOn = deskPose === "work" || deskPose === "success" || deskPose === "seat";
             const lampX = desk.propAnchors.lamp.x * scale;
@@ -666,7 +544,7 @@ export default function OfficeScene({
                         width: 24 * scale,
                         height: 38 * scale,
                         background:
-                          "linear-gradient(to bottom, rgba(251,191,36,0.55) 0%, rgba(251,191,36,0.22) 55%, transparent 100%)",
+                          "linear-gradient(to bottom, color-mix(in srgb, var(--lamp) 38%, transparent) 0%, transparent 100%)",
                         clipPath: "polygon(38% 0, 62% 0, 100% 100%, 0% 100%)",
                         mixBlendMode: "screen",
                       }}
@@ -680,7 +558,7 @@ export default function OfficeScene({
                         width: 60 * scale,
                         height: 30 * scale,
                         background:
-                          "radial-gradient(ellipse at 30% 40%, rgba(251,191,36,0.5) 0%, rgba(251,191,36,0.18) 50%, transparent 72%)",
+                          "radial-gradient(ellipse at 30% 40%, color-mix(in srgb, var(--lamp) 32%, transparent) 0%, transparent 72%)",
                         mixBlendMode: "screen",
                       }}
                     />
@@ -692,8 +570,8 @@ export default function OfficeScene({
                         top: lampY + 3 * scale,
                         width: 6 * scale,
                         height: 6 * scale,
-                        backgroundColor: "#FDE68A",
-                        boxShadow: `0 0 ${8 * scale}px rgba(253,230,138,0.95), 0 0 ${16 * scale}px rgba(251,191,36,0.6)`,
+                        backgroundColor: "var(--lamp)",
+                        boxShadow: `0 0 ${5 * scale}px color-mix(in srgb, var(--lamp) 65%, transparent)`,
                         mixBlendMode: "screen",
                       }}
                     />
@@ -706,7 +584,7 @@ export default function OfficeScene({
                         width: 56 * scale,
                         height: Math.max(2, 2 * scale),
                         background:
-                          "linear-gradient(to right, rgba(251,191,36,0.65), rgba(251,191,36,0.15))",
+                          "linear-gradient(to right, color-mix(in srgb, var(--lamp) 48%, transparent), transparent)",
                         mixBlendMode: "screen",
                       }}
                     />
@@ -714,20 +592,18 @@ export default function OfficeScene({
                 )}
                 {/* Monitor bleed: back faces camera, so light escapes BEHIND
                     the monitor (upward, onto desk-rear). Awake (working or
-                    just-finished) = green afterglow, pending = cool,
+                    just-finished) uses outcome afterglow, pending = cool,
                     asleep = nothing. */}
                 {(isAwakeAtDesk || deskPose === "seat") && (
                   <>
                     <div
-                      className={`absolute ${isAwakeAtDesk ? "monitor-spill-working" : ""}`}
+                      className={`absolute ${isWorkingAtDesk ? "monitor-spill-working" : ""}`}
                       style={{
                         left: monX - 12 * scale,
                         top: monY - 18 * scale,
                         width: 40 * scale,
                         height: 30 * scale,
-                        background: isAwakeAtDesk
-                          ? "radial-gradient(ellipse at 50% 82%, rgba(34,197,94,0.6) 0%, rgba(34,197,94,0.22) 50%, transparent 72%)"
-                          : "radial-gradient(ellipse at 50% 82%, rgba(148,197,255,0.36) 0%, rgba(148,197,255,0.1) 55%, transparent 75%)",
+                        background: `radial-gradient(ellipse at 50% 82%, color-mix(in srgb, ${monitorGlowColor} ${isAwakeAtDesk ? 42 : 30}%, transparent) 0%, transparent ${isAwakeAtDesk ? 72 : 75}%)`,
                         mixBlendMode: "screen",
                       }}
                     />
@@ -739,11 +615,9 @@ export default function OfficeScene({
                         top: monY - 1 * scale,
                         width: 16 * scale,
                         height: Math.max(1, 1.5 * scale),
-                        backgroundColor: isAwakeAtDesk ? "#4ADE80" : "#93C5FD",
+                        backgroundColor: monitorGlowColor,
                         opacity: isAwakeAtDesk ? 0.85 : 0.55,
-                        boxShadow: isAwakeAtDesk
-                          ? `0 0 ${8 * scale}px rgba(74,222,128,0.9)`
-                          : `0 0 ${4 * scale}px rgba(147,197,253,0.7)`,
+                        boxShadow: `0 0 ${(isAwakeAtDesk ? 4 : 3) * scale}px ${monitorGlowColor}`,
                         mixBlendMode: "screen",
                       }}
                     />
@@ -755,8 +629,7 @@ export default function OfficeScene({
                         top: (desk.propAnchors.monitor.y + 5) * scale,
                         width: Math.max(1, 1.5 * scale),
                         height: Math.max(1, 1.5 * scale),
-                        backgroundColor: isAwakeAtDesk ? "#4ADE80" : "#F59E0B",
-                        boxShadow: `0 0 ${4 * scale}px rgba(74,222,128,0.9)`,
+                        backgroundColor: monitorGlowColor,
                         mixBlendMode: "screen",
                       }}
                     />
@@ -768,9 +641,7 @@ export default function OfficeScene({
                         top: (desk.furnitureOrigin.y + 24) * scale,
                         width: 32 * scale,
                         height: 12 * scale,
-                        background: isAwakeAtDesk
-                          ? "radial-gradient(ellipse at center, rgba(34,197,94,0.18) 0%, transparent 70%)"
-                          : "radial-gradient(ellipse at center, rgba(147,197,253,0.12) 0%, transparent 70%)",
+                        background: `radial-gradient(ellipse at center, color-mix(in srgb, ${monitorGlowColor} ${isAwakeAtDesk ? 15 : 10}%, transparent) 0%, transparent 70%)`,
                         mixBlendMode: "screen",
                       }}
                     />
@@ -787,11 +658,11 @@ export default function OfficeScene({
           const desk = getDeskAnchor(actor.seatIndex);
           const actorLabel = (actor.displayName || actor.agentKey).replace(/-/g, " ");
           // Repeat calls stack here: busy count becomes a queue badge.
-          const busyCount = getActorBusyCount(actor.actorId, invocations);
+          const busyCount = actorActiveWorkCount(activity, actor.actorId);
           // Nameplate pinned on the desk front — never collides with the row
           // above, at any room height. Screen-space font, desk-width plate.
           const fs = 10 / netZoom;
-          const lw = Math.min(120 / netZoom, 60 * scale);
+          const lw = Math.min(120 / netZoom, 46 * scale);
           const o = 1 / netZoom;
           return (
             <div
@@ -807,8 +678,8 @@ export default function OfficeScene({
                 textOverflow: "ellipsis",
                 fontSize: fs,
                 lineHeight: `${12 / netZoom}px`,
-                color: busyCount > 1 ? "#4ADE80" : "#F1F5F9",
-                textShadow: `0 0 ${o}px #0B1220, ${o}px ${o}px 0 #0B1220, ${-o}px ${-o}px 0 #0B1220, ${o}px ${-o}px 0 #0B1220, ${-o}px ${o}px 0 #0B1220`,
+                color: busyCount > 1 ? "var(--working)" : "var(--text)",
+                textShadow: `0 0 ${o}px var(--canvas), ${o}px ${o}px 0 var(--canvas), ${-o}px ${-o}px 0 var(--canvas), ${o}px ${-o}px 0 var(--canvas), ${-o}px ${o}px 0 var(--canvas)`,
                 fontFamily: "var(--font-pixel), monospace",
                 textAlign: "center",
                 pointerEvents: "none",
@@ -837,8 +708,8 @@ export default function OfficeScene({
                 textOverflow: "ellipsis",
                 fontSize: fs,
                 lineHeight: `${12 / netZoom}px`,
-                color: "#FBBF24",
-                textShadow: `0 0 ${o}px #0B1220, ${o}px ${o}px 0 #0B1220`,
+                color: "var(--waiting)",
+                textShadow: `0 0 ${o}px var(--canvas), ${o}px ${o}px 0 var(--canvas)`,
                 fontFamily: "var(--font-pixel), monospace",
                 textAlign: "center",
                 pointerEvents: "none",
@@ -852,4 +723,3 @@ export default function OfficeScene({
     </div>
   );
 }
-

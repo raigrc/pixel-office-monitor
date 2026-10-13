@@ -1,0 +1,72 @@
+{
+  "screenshots": [
+    {
+      "filename": "01-3d-day-roles.png",
+      "viewport": "1280x800",
+      "time": "manual 12:00",
+      "state": "orchestrator and six representative roles working"
+    },
+    {
+      "filename": "02-3d-night-roles.png",
+      "viewport": "1280x800",
+      "time": "manual 01:00",
+      "state": "same representative roles working"
+    },
+    {
+      "filename": "03-busy-worksite.png",
+      "viewport": "1280x800",
+      "time": "manual 12:00",
+      "state": "orchestrator and ten distinct specialists working"
+    },
+    {
+      "filename": "04-working-state.png",
+      "viewport": "1280x800",
+      "time": "manual 12:00",
+      "state": "researcher working among idle standby specialists"
+    },
+    {
+      "filename": "05-error-state.png",
+      "viewport": "1280x800",
+      "time": "manual 12:00",
+      "state": "failed security-reviewer invocation outcome beat"
+    },
+    {
+      "filename": "06-selected-agent.png",
+      "viewport": "1280x800",
+      "time": "manual 12:00",
+      "state": "keyboard-selected specialist with persistent foot marker and inspector"
+    },
+    {
+      "filename": "07-delegation-crowded.png",
+      "viewport": "1280x800",
+      "time": "manual 12:00",
+      "state": "started orchestrator-to-architect delegation in crowded worksite"
+    },
+    {
+      "filename": "08-architect-vs-researcher.png",
+      "viewport": "1280x800",
+      "time": "manual 12:00",
+      "state": "architect document silhouette beside researcher sensor silhouette"
+    },
+    {
+      "filename": "09-devops-security-senior.png",
+      "viewport": "1280x800",
+      "time": "manual 12:00",
+      "state": "devops comms, security shield, and senior device silhouettes"
+    },
+    {
+      "filename": "10-mobile-3d.png",
+      "viewport": "390x844",
+      "time": "manual 12:00",
+      "state": "crowded working worksite",
+      "horizontalOverflow": false
+    },
+    {
+      "filename": "11-reduced-motion.png",
+      "viewport": "1280x800",
+      "time": "manual 12:00",
+      "state": "crowded worksite with prefers-reduced-motion: reduce"
+    }
+  ],
+  "browserErrors": []
+}

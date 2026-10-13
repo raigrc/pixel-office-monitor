@@ -7,6 +7,8 @@ import {
   _getStoreSize,
   getFloorsCount,
   getUptimeMs,
+  closeFloor,
+  getSnapshot,
 } from "../monitor-store";
 import type { IngestPayload } from "../schema";
 
@@ -41,6 +43,28 @@ void _makePayloadWithDetail;
 describe("monitor-store", () => {
   beforeEach(() => {
     _clearStore();
+  });
+
+  describe("closeFloor", () => {
+    it("sets closure timestamps once and preserves them on repeat close", () => {
+      const now = vi.spyOn(Date, "now").mockReturnValue(100);
+      upsert(makePayload({ sessionID: "ses_close", ts: 50 }));
+      now.mockReturnValue(200);
+
+      expect(closeFloor("ses_close")).toBe(true);
+      const first = getSnapshot().floors.find((floor) => floor.floorId === "ses_close");
+      expect(first).toMatchObject({ closed: true, closedAt: 200, updatedAt: 200 });
+
+      now.mockReturnValue(300);
+      expect(closeFloor("ses_close")).toBe(true);
+      const repeated = getSnapshot().floors.find((floor) => floor.floorId === "ses_close");
+      expect(repeated).toMatchObject({ closed: true, closedAt: 200, updatedAt: 200 });
+      now.mockRestore();
+    });
+
+    it("returns false for an unknown floor", () => {
+      expect(closeFloor("missing")).toBe(false);
+    });
   });
 
   // -------------------------------------------------------------------------

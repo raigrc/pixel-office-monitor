@@ -140,4 +140,19 @@ describe('Hex Grid', () => {
       expect(cellsB.length).toBe(2);
     });
   });
+
+  describe('Colony spacing basis (1.1B)', () => {
+    it('keeps HEX_SIZE at 1.5 so persisted coordinates stay valid', () => {
+      expect(HEX_SIZE).toBe(1.5);
+    });
+
+    it('documents why adjacent anchors collide: neighbors sit ~2.598 apart', () => {
+      // Session decks have diameter 7.2, so Colony requires anchor
+      // distance >= 3 (~7.794 world units) instead of adjacency.
+      const origin = hexToWorld(0, 0);
+      const neighbor = hexToWorld(1, 0);
+      expect(origin.distanceTo(neighbor)).toBeCloseTo(Math.sqrt(3) * HEX_SIZE, 5);
+      expect(origin.distanceTo(neighbor)).toBeLessThan(7.2);
+    });
+  });
 });

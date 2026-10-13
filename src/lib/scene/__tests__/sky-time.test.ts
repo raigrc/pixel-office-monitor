@@ -14,8 +14,8 @@ describe('deriveTimeOfDayFromEpoch', () => {
 
   it('stays within a 24h range for live input', () => {
     // Callers must pass Date.now() scale. performance.now() scale lands
-    // in 1970 and renders as night, which the engine avoids by passing
-    // Date.now() (see three-engine render).
+    // near 1970 and freezes the sky instead of tracking the wall clock,
+    // which the engine avoids by passing Date.now() (see three-engine render).
     const tod = deriveTimeOfDayFromEpoch(Date.now());
     expect(tod).toBeGreaterThanOrEqual(0);
     expect(tod).toBeLessThan(24);

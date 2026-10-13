@@ -12,6 +12,12 @@
 
 # testing
 /coverage
+/Temp/opencode/
+
+# python generators
+__pycache__/
+*.py[cod]
+.venv/
 
 # next.js
 /.next/
@@ -39,3 +45,15 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# local dev smoke logs (may contain bearer credentials; never commit)
+dev-smoke-3dfix.log
+dev-colony-test.log
+
+# generated development logs; existing tracked logs remain tracked
+/dev*.log
+
+/graphify-out/
+/.graphify*
+
+/scripts/asset-backups/
